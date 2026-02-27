@@ -1,0 +1,7 @@
+[workspace]
+members = [
+    "crates/saan_core",
+    "crates/saan_cli",
+    "crates/saan_mesh",
+]
+resolver = "2"
