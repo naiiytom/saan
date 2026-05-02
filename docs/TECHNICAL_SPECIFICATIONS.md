@@ -1,14 +1,16 @@
 # Technical Specifications
 
 ## 1. Overview
-Saan is a high-performance data processing and visualization platform. It is built as a hybrid system designed for zero-latency metadata operations and "Metadata-as-Code" workflows. It leverages Rust for core performance, DuckDB for in-process SQL analytics, WebAssembly (WASM) for browser-based visualization, and Python for data science integration.
+Saan is a high-performance **data lineage and visualization platform**, with ad-hoc query as a deliberate secondary surface. It is built as a hybrid system designed for zero-latency metadata operations and "Metadata-as-Code" workflows. It leverages Rust for core performance, DuckDB for in-process SQL analytics, WebAssembly (WASM) for browser-based visualization, and Python for data science integration.
+
+The product hierarchy is explicit: **lineage is the differentiated capability** (extracting, persisting, validating, and visualizing how data assets connect). Ad-hoc query of the underlying Store is layered *on top of* the lineage spine — same DuckDB file, same schema — and ships in Phase 5 of the roadmap. See `docs/ROADMAP.md` for phasing.
 
 ## 2. Architecture
 
 ### 2.1 Core Components
 
 *   **The Weaver (Rust Core):**
-    *   **Responsibility:** High-concurrency engine responsible for graph management and automated lineage extraction.
+    *   **Responsibility:** Engine responsible for graph management and automated lineage extraction. Synchronous in the Phase 1 lineage spine; gains asynchronous I/O for cloud sources in Phase 6 (see `ROADMAP.md`).
     *   **Key Features:**
         *   Implements a "Polymorphic Ingestion Engine" to handle diverse data sources.
         *   Graph Logic using `petgraph` for DAG management, cycle detection, and reachability analysis.
@@ -49,7 +51,7 @@ Saan is a high-performance data processing and visualization platform. It is bui
 ## 3. Technology Stack
 
 *   **Language:** Rust (chosen for sub-millisecond graph traversals and memory safety)
-*   **Concurrency Model:** Tokio (asynchronous metadata extraction from remote sources like Cloud DBs and APIs)
+*   **Concurrency Model:** Tokio (asynchronous metadata extraction from remote sources like Cloud DBs and APIs — introduced in Phase 6 via a separate `AsyncShaver` trait; the Phase 1 lineage spine is synchronous)
 *   **Database Engine:** DuckDB
 *   **WASM Framework:** React + WASM
 *   **Python Interop:** PyO3 / Maturin
@@ -85,8 +87,26 @@ db.interlace()
 df = db.query("SELECT * FROM data").to_pandas()
 ```
 
-## 5. Security & Performance
+## 5. Future Surfaces
+
+Surfaces explicitly planned but not part of the lineage spine. Each is layered on top of the lineage spine, not parallel to it — they reuse The Store, The Weaver's graph, and (where relevant) the CLI / SDK scaffolding that lineage work has already built.
+
+### 5.1 Ad-Hoc Query (Phase 5)
+The Store is a DuckDB database. Once lineage data is persisted, exposing the same store for arbitrary SQL is a thin layer:
+
+*   **CLI:** `saan query "SELECT ... FROM nodes WHERE source_type = 'sql'"`.
+*   **Python SDK:** `db.query(sql).to_pandas() / .to_polars() / .to_arrow()`.
+
+There is no separate ingestion path for query — it reads exactly what lineage wrote. This is why query is *second-class*: it is a capability of the same store, not a parallel product.
+
+### 5.2 Async Shavers (Phase 6)
+For cloud sources (Snowflake `INFORMATION_SCHEMA`, BigQuery, REST APIs), a separate `AsyncShaver` trait (Tokio-backed) will exist alongside the synchronous `Shaver` trait. The sync trait is not retrofitted with `async` — that would force every consumer to depend on a runtime. Sync and async Shavers coexist; the registry dispatches to the right kind by extension or scheme.
+
+### 5.3 Plugin Discovery (Phase 6)
+External crates implementing `Shaver` will be loadable at runtime, so the project does not need to take a build-time dependency on every supported source. Mechanism (dynamic loading vs. registered Cargo features) is deferred to Phase 6.
+
+## 6. Security & Performance
 
 *   **Memory Safety:** Guaranteed by Rust.
-*   **Concurrency:** Async runtime (Tokio) for I/O bound tasks.
+*   **Concurrency:** Async runtime (Tokio) for I/O bound tasks (Phase 6 onward; the lineage spine in Phase 1 is synchronous).
 *   **Sandboxing:** WASM provides a secure execution environment for the UI.
