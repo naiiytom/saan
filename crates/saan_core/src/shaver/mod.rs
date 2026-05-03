@@ -40,7 +40,13 @@ impl ShaverRegistry {
 
     pub fn with_builtins() -> Self {
         let mut r = Self::new();
-        r.register(Arc::new(sql::SqlShaver));
+        r.register(Arc::new(sql::SqlShaver::new()));
+        r
+    }
+
+    pub fn with_sql_dialect(dialect: sql::SqlDialect) -> Self {
+        let mut r = Self::new();
+        r.register(Arc::new(sql::SqlShaver::with_dialect(dialect)));
         r
     }
 
