@@ -33,3 +33,6 @@ wheels/
 .cargo/registry/
 .cargo/git/
 .claude/
+
+# Git worktrees
+.worktrees/
