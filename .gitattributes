@@ -1,0 +1,18 @@
+# Normalize line endings to LF in the repo; checkout as LF on all platforms.
+* text=auto eol=lf
+
+# Explicitly LF for source and config files.
+*.rs    text eol=lf
+*.toml  text eol=lf
+*.json  text eol=lf
+*.sql   text eol=lf
+*.md    text eol=lf
+*.yml   text eol=lf
+*.yaml  text eol=lf
+*.txt   text eol=lf
+
+# Binary files — never touch line endings.
+*.png   binary
+*.jpg   binary
+*.ico   binary
+*.wasm  binary
