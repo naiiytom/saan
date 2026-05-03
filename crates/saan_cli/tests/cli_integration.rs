@@ -126,6 +126,7 @@ fn full_pipeline_end_to_end() {
         .arg(&store_path)
         .assert()
         .success()
+        .stdout(contains("Staged:"))
         .stdout(contains("node(s)"));
 
     // apply
