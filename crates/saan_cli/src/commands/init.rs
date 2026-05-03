@@ -1,4 +1,4 @@
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 use saan_core::Store;
 use std::path::Path;
 

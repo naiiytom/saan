@@ -38,12 +38,11 @@ fn unknown_command_exits_nonzero() {
 #[test]
 fn init_creates_saan_file() {
     let dir = tempdir().unwrap();
-    saan()
-        .arg("init")
-        .arg(dir.path())
-        .assert()
-        .success();
-    assert!(dir.path().join(".saan").exists(), ".saan file must be created");
+    saan().arg("init").arg(dir.path()).assert().success();
+    assert!(
+        dir.path().join(".saan").exists(),
+        ".saan file must be created"
+    );
 }
 
 #[test]

@@ -67,9 +67,9 @@ impl Store {
         let mut node_stmt = self.conn.prepare(
             "INSERT INTO staging_nodes (id, label, source_type, source_path) VALUES (?, ?, ?, ?)",
         )?;
-        let mut edge_stmt = self.conn.prepare(
-            "INSERT INTO staging_edges (from_id, to_id, source_path) VALUES (?, ?, ?)",
-        )?;
+        let mut edge_stmt = self
+            .conn
+            .prepare("INSERT INTO staging_edges (from_id, to_id, source_path) VALUES (?, ?, ?)")?;
         for strand in strands {
             let path = strand.source_path.to_string_lossy();
             for node in &strand.nodes {
@@ -107,7 +107,9 @@ impl Store {
     pub fn load_graph(&self) -> Result<Graph, StoreError> {
         let mut g = Graph::new();
 
-        let mut stmt = self.conn.prepare("SELECT id, label, source_type FROM nodes")?;
+        let mut stmt = self
+            .conn
+            .prepare("SELECT id, label, source_type FROM nodes")?;
         let nodes: Vec<Node> = stmt
             .query_map([], |row| {
                 Ok(Node::new(
@@ -175,7 +177,10 @@ mod tests {
         let (store, _dir) = make_store();
 
         let strands = vec![strand_with(
-            &[("raw.orders", "Raw Orders"), ("stg.orders", "Staged Orders")],
+            &[
+                ("raw.orders", "Raw Orders"),
+                ("stg.orders", "Staged Orders"),
+            ],
             &[("raw.orders", "stg.orders")],
         )];
         store.write_strands_to_staging(&strands).unwrap();
@@ -190,10 +195,7 @@ mod tests {
     fn apply_twice_is_idempotent() {
         let (store, _dir) = make_store();
 
-        let strands = vec![strand_with(
-            &[("raw.orders", "Raw Orders")],
-            &[],
-        )];
+        let strands = vec![strand_with(&[("raw.orders", "Raw Orders")], &[])];
         store.write_strands_to_staging(&strands).unwrap();
         store.apply_staging().unwrap();
 

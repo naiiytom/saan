@@ -66,10 +66,7 @@ impl ShaverRegistry {
             if !path.is_file() {
                 continue;
             }
-            let ext = path
-                .extension()
-                .and_then(|e| e.to_str())
-                .unwrap_or("");
+            let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
             if let Some(shaver) = self.for_extension(ext) {
                 strands.push(shaver.shave(path)?);
             }

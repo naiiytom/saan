@@ -28,12 +28,11 @@ impl Shaver for SqlShaver {
             source: e,
         })?;
 
-        let statements = Parser::parse_sql(&GenericDialect {}, &sql).map_err(|e| {
-            ShaverError::Parse {
+        let statements =
+            Parser::parse_sql(&GenericDialect {}, &sql).map_err(|e| ShaverError::Parse {
                 path: input.to_path_buf(),
                 message: e.to_string(),
-            }
-        })?;
+            })?;
 
         let mut strand = Strand::new(input.to_path_buf());
         for stmt in &statements {
@@ -202,9 +201,7 @@ mod tests {
 
     #[test]
     fn create_table_as_select() {
-        let strand = shave_sql(
-            "CREATE TABLE stg.orders AS SELECT * FROM raw.orders",
-        );
+        let strand = shave_sql("CREATE TABLE stg.orders AS SELECT * FROM raw.orders");
         assert!(node_ids(&strand).contains(&"stg.orders".to_string()));
         assert!(node_ids(&strand).contains(&"raw.orders".to_string()));
         assert!(edge_pairs(&strand).contains(&("raw.orders".into(), "stg.orders".into())));
@@ -212,18 +209,14 @@ mod tests {
 
     #[test]
     fn create_view_as_select() {
-        let strand = shave_sql(
-            "CREATE VIEW marts.summary AS SELECT * FROM stg.orders",
-        );
+        let strand = shave_sql("CREATE VIEW marts.summary AS SELECT * FROM stg.orders");
         assert!(node_ids(&strand).contains(&"marts.summary".to_string()));
         assert!(edge_pairs(&strand).contains(&("stg.orders".into(), "marts.summary".into())));
     }
 
     #[test]
     fn insert_into_select() {
-        let strand = shave_sql(
-            "INSERT INTO stg.orders SELECT * FROM raw.orders",
-        );
+        let strand = shave_sql("INSERT INTO stg.orders SELECT * FROM raw.orders");
         assert!(edge_pairs(&strand).contains(&("raw.orders".into(), "stg.orders".into())));
     }
 
@@ -254,13 +247,18 @@ mod tests {
              SELECT * FROM cte",
         );
         let ids = node_ids(&strand);
-        assert!(!ids.contains(&"cte".to_string()), "CTE name must not appear as a node");
+        assert!(
+            !ids.contains(&"cte".to_string()),
+            "CTE name must not appear as a node"
+        );
         assert!(ids.contains(&"raw.orders".to_string()));
         assert!(ids.contains(&"marts.summary".to_string()));
-        assert!(strand
-            .edges
-            .iter()
-            .any(|e| e.from == "raw.orders" && e.to == "marts.summary"));
+        assert!(
+            strand
+                .edges
+                .iter()
+                .any(|e| e.from == "raw.orders" && e.to == "marts.summary")
+        );
     }
 
     #[test]
@@ -276,9 +274,8 @@ mod tests {
 
     #[test]
     fn qualified_name_preserved() {
-        let strand = shave_sql(
-            "CREATE TABLE prod.raw.orders AS SELECT * FROM staging.src.raw_orders",
-        );
+        let strand =
+            shave_sql("CREATE TABLE prod.raw.orders AS SELECT * FROM staging.src.raw_orders");
         let ids = node_ids(&strand);
         assert!(ids.contains(&"prod.raw.orders".to_string()));
         assert!(ids.contains(&"staging.src.raw_orders".to_string()));
@@ -286,9 +283,7 @@ mod tests {
 
     #[test]
     fn quoted_identifier_preserves_case() {
-        let strand = shave_sql(
-            r#"CREATE TABLE "MySchema"."MyTable" AS SELECT * FROM raw.orders"#,
-        );
+        let strand = shave_sql(r#"CREATE TABLE "MySchema"."MyTable" AS SELECT * FROM raw.orders"#);
         let ids = node_ids(&strand);
         assert!(
             ids.contains(&"MySchema.MyTable".to_string()),
