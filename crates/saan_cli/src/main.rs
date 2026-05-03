@@ -1,91 +1,61 @@
-/// Top-level CLI commands supported by the Saan toolbelt.
-#[derive(Debug, PartialEq)]
-pub enum Command {
-    /// `saan init` – initialise a new metadata store.
-    Init,
-    /// `saan prepare` – extract raw metadata from data sources.
-    Prepare,
-    /// `saan interlace` – define how metadata assets connect.
+mod commands;
+
+use anyhow::Result;
+use clap::{Parser, Subcommand};
+use std::path::PathBuf;
+
+#[derive(Parser)]
+#[command(name = "saan", version, about = "Saan — metadata lineage platform")]
+struct Cli {
+    #[command(subcommand)]
+    command: Commands,
+}
+
+#[derive(Subcommand)]
+enum Commands {
+    /// Create a new .saan metadata store
+    Init {
+        /// Directory in which to create .saan (default: current directory)
+        #[arg(default_value = ".")]
+        path: PathBuf,
+        /// Overwrite an existing store
+        #[arg(long)]
+        force: bool,
+    },
+    /// Extract metadata from source files into the staging tables
+    Prepare {
+        /// Input directory or file to walk
+        input: PathBuf,
+        /// Path to the .saan store
+        #[arg(long, default_value = ".saan")]
+        store: PathBuf,
+    },
+    /// Promote staging tables into the final graph
+    Apply {
+        /// Path to the .saan store
+        #[arg(long, default_value = ".saan")]
+        store: PathBuf,
+    },
+    /// Define lineage connections [not implemented in Phase 1]
     Interlace,
-    /// `saan apply` – persist the graph to the local store.
-    Apply,
-    /// `saan inspect` – validate the graph structure.
+    /// Validate the graph structure [not implemented in Phase 1]
     Inspect,
-    /// `saan view` – launch the WASM visualizer.
+    /// Launch the WASM visualizer [not implemented in Phase 1]
     View,
 }
 
-/// Parse the first positional argument into a `Command`.
-/// Returns `None` when the argument is unrecognised or absent.
-pub fn parse_command(args: &[String]) -> Option<Command> {
-    match args.first().map(String::as_str) {
-        Some("init") => Some(Command::Init),
-        Some("prepare") => Some(Command::Prepare),
-        Some("interlace") => Some(Command::Interlace),
-        Some("apply") => Some(Command::Apply),
-        Some("inspect") => Some(Command::Inspect),
-        Some("view") => Some(Command::View),
-        _ => None,
-    }
-}
+fn main() -> Result<()> {
+    let cli = Cli::parse();
 
-fn main() {
-    let args: Vec<String> = std::env::args().skip(1).collect();
-    match parse_command(&args) {
-        Some(cmd) => println!("Running: {:?}", cmd),
-        None => {
-            eprintln!("Usage: saan <command>");
-            eprintln!("Commands: init, prepare, interlace, apply, inspect, view");
+    match cli.command {
+        Commands::Init { path, force } => commands::init::run(&path, force)?,
+        Commands::Prepare { input, store } => commands::prepare::run(&input, &store)?,
+        Commands::Apply { store } => commands::apply::run(&store)?,
+        Commands::Interlace | Commands::Inspect | Commands::View => {
+            eprintln!("not implemented in Phase 1");
             std::process::exit(1);
         }
     }
-}
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn args(s: &[&str]) -> Vec<String> {
-        s.iter().map(|&a| a.to_string()).collect()
-    }
-
-    #[test]
-    fn parse_init() {
-        assert_eq!(parse_command(&args(&["init"])), Some(Command::Init));
-    }
-
-    #[test]
-    fn parse_prepare() {
-        assert_eq!(parse_command(&args(&["prepare"])), Some(Command::Prepare));
-    }
-
-    #[test]
-    fn parse_interlace() {
-        assert_eq!(parse_command(&args(&["interlace"])), Some(Command::Interlace));
-    }
-
-    #[test]
-    fn parse_apply() {
-        assert_eq!(parse_command(&args(&["apply"])), Some(Command::Apply));
-    }
-
-    #[test]
-    fn parse_inspect() {
-        assert_eq!(parse_command(&args(&["inspect"])), Some(Command::Inspect));
-    }
-
-    #[test]
-    fn parse_view() {
-        assert_eq!(parse_command(&args(&["view"])), Some(Command::View));
-    }
-
-    #[test]
-    fn unknown_command_returns_none() {
-        assert_eq!(parse_command(&args(&["foobar"])), None);
-    }
-
-    #[test]
-    fn empty_args_returns_none() {
-        assert_eq!(parse_command(&[]), None);
-    }
+    Ok(())
 }
