@@ -12,7 +12,12 @@ pub struct RenderConfig {
 }
 
 impl RenderConfig {
-    pub fn new(width: u32, height: u32, show_labels: bool, background_color: impl Into<String>) -> Self {
+    pub fn new(
+        width: u32,
+        height: u32,
+        show_labels: bool,
+        background_color: impl Into<String>,
+    ) -> Self {
         Self {
             width,
             height,

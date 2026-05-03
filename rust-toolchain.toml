@@ -1,0 +1,6 @@
+[toolchain]
+# Windows: keeps the MSVC linker (link.exe) which handles DuckDB's large binary.
+# Linux/macOS: delete this file or override with `rustup override set stable`.
+# The rstrtmgr.lib flag in .cargo/config.toml is scoped to windows-msvc only
+# and is a no-op on Linux/macOS.
+channel = "stable-x86_64-pc-windows-msvc"

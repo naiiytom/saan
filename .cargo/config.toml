@@ -1,0 +1,4 @@
+# DuckDB (bundled) uses Windows Restart Manager APIs on MSVC which aren't linked
+# by default. Add rstrtmgr.lib explicitly so the final link step finds them.
+[target.x86_64-pc-windows-msvc]
+rustflags = ["-C", "link-arg=rstrtmgr.lib"]
