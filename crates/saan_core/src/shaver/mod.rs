@@ -58,10 +58,16 @@ impl ShaverRegistry {
     /// Walk `input` recursively and shave every file whose extension is registered.
     pub fn shave_path(&self, input: &Path) -> Result<Vec<Strand>, ShaverError> {
         let mut strands = Vec::new();
-        for entry in walkdir::WalkDir::new(input)
-            .into_iter()
-            .filter_map(|e| e.ok())
-        {
+        for entry in walkdir::WalkDir::new(input) {
+            let entry = entry.map_err(|e| {
+                let io_err = e
+                    .into_io_error()
+                    .unwrap_or_else(|| std::io::Error::other("directory traversal error"));
+                ShaverError::Io {
+                    path: input.to_path_buf(),
+                    source: io_err,
+                }
+            })?;
             let path = entry.path();
             if !path.is_file() {
                 continue;

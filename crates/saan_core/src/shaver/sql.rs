@@ -81,7 +81,9 @@ fn add_lineage(target: &str, query: &Query, strand: &mut Strand) {
 }
 
 fn push_node(strand: &mut Strand, id: &str) {
-    strand.nodes.push(Node::new(id, id, "sql"));
+    if !strand.nodes.iter().any(|n| n.id == id) {
+        strand.nodes.push(Node::new(id, id, "sql"));
+    }
 }
 
 // ── CTE resolution ────────────────────────────────────────────────────────────
@@ -297,6 +299,17 @@ mod tests {
         let ids = node_ids(&strand);
         assert!(ids.contains(&"stg.orders".to_string()));
         assert!(ids.contains(&"raw.orders".to_string()));
+    }
+
+    #[test]
+    fn same_table_across_statements_deduplicates_nodes() {
+        let strand = shave_sql(
+            "CREATE TABLE stg.orders AS SELECT * FROM raw.orders;\n\
+             CREATE VIEW marts.summary AS SELECT * FROM stg.orders;",
+        );
+        let ids = node_ids(&strand);
+        let count = ids.iter().filter(|id| *id == "stg.orders").count();
+        assert_eq!(count, 1, "stg.orders must appear exactly once");
     }
 
     #[test]

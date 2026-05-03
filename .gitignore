@@ -30,5 +30,6 @@ wheels/
 .vscode/
 *.swp
 *.swo
-.cargo/
+.cargo/registry/
+.cargo/git/
 .claude/

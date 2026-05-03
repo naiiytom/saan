@@ -64,22 +64,36 @@ impl Store {
     }
 
     pub fn write_strands_to_staging(&self, strands: &[Strand]) -> Result<(), StoreError> {
-        let mut node_stmt = self.conn.prepare(
-            "INSERT INTO staging_nodes (id, label, source_type, source_path) VALUES (?, ?, ?, ?)",
-        )?;
-        let mut edge_stmt = self
-            .conn
-            .prepare("INSERT INTO staging_edges (from_id, to_id, source_path) VALUES (?, ?, ?)")?;
-        for strand in strands {
-            let path = strand.source_path.to_string_lossy();
-            for node in &strand.nodes {
-                node_stmt.execute(duckdb::params![node.id, node.label, node.source_type, path])?;
+        self.conn.execute_batch("BEGIN")?;
+        let result: Result<(), StoreError> = (|| {
+            let mut node_stmt = self.conn.prepare(
+                "INSERT INTO staging_nodes (id, label, source_type, source_path) VALUES (?, ?, ?, ?)",
+            )?;
+            let mut edge_stmt = self.conn.prepare(
+                "INSERT INTO staging_edges (from_id, to_id, source_path) VALUES (?, ?, ?)",
+            )?;
+            for strand in strands {
+                let path = strand.source_path.to_string_lossy();
+                for node in &strand.nodes {
+                    node_stmt.execute(duckdb::params![
+                        node.id,
+                        node.label,
+                        node.source_type,
+                        path
+                    ])?;
+                }
+                for edge in &strand.edges {
+                    edge_stmt.execute(duckdb::params![edge.from, edge.to, path])?;
+                }
             }
-            for edge in &strand.edges {
-                edge_stmt.execute(duckdb::params![edge.from, edge.to, path])?;
-            }
+            Ok(())
+        })();
+        if result.is_err() {
+            let _ = self.conn.execute_batch("ROLLBACK");
+        } else {
+            self.conn.execute_batch("COMMIT")?;
         }
-        Ok(())
+        result
     }
 
     pub fn apply_staging(&self) -> Result<(), StoreError> {

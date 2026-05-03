@@ -68,8 +68,8 @@ impl Graph {
             self.id_to_index.get(&edge.to),
         ) {
             self.inner.add_edge(from_idx, to_idx, ());
+            self.edges.push(edge);
         }
-        self.edges.push(edge);
     }
 
     pub fn has_cycle(&self) -> bool {
@@ -181,5 +181,18 @@ mod tests {
     fn empty_graph_has_no_cycle() {
         let g = Graph::new();
         assert!(!g.has_cycle());
+    }
+
+    #[test]
+    fn add_edge_with_unknown_endpoint_is_not_counted() {
+        let mut g = Graph::new();
+        g.add_node(Node::new("a", "A", "sql"));
+        g.add_edge(Edge::new("a", "unknown"));
+        assert_eq!(
+            g.edge_count(),
+            0,
+            "edge to unknown node must not be counted"
+        );
+        assert!(!g.has_cycle(), "dangling edge must not cause cycle");
     }
 }
