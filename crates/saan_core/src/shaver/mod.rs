@@ -44,10 +44,9 @@ impl ShaverRegistry {
         r
     }
 
-    pub fn with_sql_dialect(dialect: sql::SqlDialect) -> Self {
-        let mut r = Self::new();
-        r.register(Arc::new(sql::SqlShaver::with_dialect(dialect)));
-        r
+    pub fn with_sql_dialect(mut self, dialect: sql::SqlDialect) -> Self {
+        self.register(Arc::new(sql::SqlShaver::with_dialect(dialect)));
+        self
     }
 
     pub fn register(&mut self, shaver: Arc<dyn Shaver>) -> &mut Self {
