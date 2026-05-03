@@ -12,6 +12,14 @@ pub enum StoreError {
     Db(#[from] duckdb::Error),
 }
 
+pub struct InspectReport {
+    pub total_nodes: usize,
+    pub total_edges: usize,
+    pub orphan_nodes: Vec<String>,
+    pub cycle_detected: bool,
+    pub external_refs: Vec<String>,
+}
+
 pub struct Store {
     conn: Connection,
 }
@@ -152,6 +160,52 @@ impl Store {
 
         Ok(g)
     }
+
+    pub fn inspect(&self) -> Result<InspectReport, StoreError> {
+        let mut stmt = self.conn.prepare("SELECT COUNT(*) FROM nodes")?;
+        let total_nodes: usize = stmt
+            .query_row([], |row| row.get::<_, i64>(0))
+            .map(|n| n as usize)?;
+
+        let mut stmt = self.conn.prepare("SELECT COUNT(*) FROM edges")?;
+        let total_edges: usize = stmt
+            .query_row([], |row| row.get::<_, i64>(0))
+            .map(|n| n as usize)?;
+
+        let mut stmt = self.conn.prepare(
+            "SELECT id FROM nodes
+             WHERE id NOT IN (SELECT from_id FROM edges)
+               AND id NOT IN (SELECT to_id   FROM edges)
+             ORDER BY id",
+        )?;
+        let orphan_nodes: Vec<String> = stmt
+            .query_map([], |row| row.get::<_, String>(0))?
+            .collect::<Result<Vec<_>, _>>()?;
+
+        let mut stmt = self.conn.prepare(
+            "SELECT DISTINCT id FROM (
+                 SELECT from_id AS id FROM edges
+                  WHERE from_id NOT IN (SELECT id FROM nodes)
+                 UNION ALL
+                 SELECT to_id AS id FROM edges
+                  WHERE to_id NOT IN (SELECT id FROM nodes)
+             ) t ORDER BY id",
+        )?;
+        let external_refs: Vec<String> = stmt
+            .query_map([], |row| row.get::<_, String>(0))?
+            .collect::<Result<Vec<_>, _>>()?;
+
+        let graph = self.load_graph()?;
+        let cycle_detected = graph.has_cycle();
+
+        Ok(InspectReport {
+            total_nodes,
+            total_edges,
+            orphan_nodes,
+            cycle_detected,
+            external_refs,
+        })
+    }
 }
 
 #[cfg(test)]
@@ -233,5 +287,54 @@ mod tests {
         store.apply_staging().unwrap();
         let g = store.load_graph().unwrap();
         assert_eq!(g.node_count(), 1);
+    }
+
+    #[test]
+    fn inspect_detects_orphan_node() {
+        let (store, _dir) = make_store();
+        store
+            .write_strands_to_staging(&[strand_with(&[("orphan", "Orphan")], &[])])
+            .unwrap();
+        store.apply_staging().unwrap();
+
+        let report = store.inspect().unwrap();
+        assert!(report.orphan_nodes.contains(&"orphan".to_string()));
+        assert!(!report.cycle_detected);
+        assert!(report.external_refs.is_empty());
+    }
+
+    #[test]
+    fn inspect_reports_external_ref() {
+        let (store, _dir) = make_store();
+        // raw.orders used as a source edge endpoint but has no node row
+        store
+            .write_strands_to_staging(&[strand_with(
+                &[("stg.orders", "Staged")],
+                &[("raw.orders", "stg.orders")],
+            )])
+            .unwrap();
+        store.apply_staging().unwrap();
+
+        let report = store.inspect().unwrap();
+        assert!(report.external_refs.contains(&"raw.orders".to_string()));
+    }
+
+    #[test]
+    fn inspect_clean_graph_has_no_issues() {
+        let (store, _dir) = make_store();
+        store
+            .write_strands_to_staging(&[strand_with(
+                &[("raw.orders", "Raw"), ("stg.orders", "Staged")],
+                &[("raw.orders", "stg.orders")],
+            )])
+            .unwrap();
+        store.apply_staging().unwrap();
+
+        let report = store.inspect().unwrap();
+        assert!(report.orphan_nodes.is_empty());
+        assert!(report.external_refs.is_empty());
+        assert!(!report.cycle_detected);
+        assert_eq!(report.total_nodes, 2);
+        assert_eq!(report.total_edges, 1);
     }
 }
