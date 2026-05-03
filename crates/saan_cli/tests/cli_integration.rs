@@ -178,3 +178,22 @@ fn prepare_apply_idempotent() {
         .success()
         .stdout(contains("2 node(s), 1 edge(s)"));
 }
+
+#[test]
+fn prepare_with_postgres_dialect_parses_cast_syntax() {
+    let dir = tempdir().unwrap();
+    let store_path = dir.path().join(".saan");
+    let sql_path = dir.path().join("cast.sql");
+
+    std::fs::write(&sql_path, b"CREATE TABLE t AS SELECT id::text FROM src").unwrap();
+
+    saan().arg("init").arg(dir.path()).assert().success();
+
+    saan()
+        .arg("prepare")
+        .arg(dir.path())
+        .arg("--store").arg(&store_path)
+        .arg("--dialect").arg("postgres")
+        .assert()
+        .success();
+}
