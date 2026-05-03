@@ -4,26 +4,26 @@ Saan is a **lineage-first** platform: extract how data assets connect, persist t
 
 Each phase ends in a usable artifact. No half-finished surfaces leak between phases.
 
-## Phase 1 — Lineage Spine (MVP)
+## Phase 1 — Lineage Spine (MVP) ✅
 
-The thinnest end-to-end slice that proves the lineage premise. See `IMPLEMENTATION_PLAN.md` for the detailed work breakdown.
+The thinnest end-to-end slice that proves the lineage premise. See `IMPLEMENTATION_PLAN.md` for the detailed work breakdown and build notes.
 
-*   [ ] **`saan_core`:**
-    *   [ ] Replace custom `Graph` with a `petgraph::stable_graph::StableDiGraph` wrapper.
-    *   [ ] `Strand` type — bundle of nodes/edges produced by one shave.
-    *   [ ] Public `Shaver` trait + `ShaverError` + `ShaverRegistry`.
-    *   [ ] `SqlShaver` (built-in): handles `CREATE TABLE AS`, `CREATE VIEW AS`, `INSERT INTO ... SELECT`, bare `SELECT`, with correct CTE / subquery / qualified-name handling. Uses `sqlparser-rs` (Generic dialect).
-    *   [ ] `Store` — DuckDB-backed `.saan` file: `open`, `init_schema`, `write_strands_to_staging`, `apply_staging`, `load_graph`.
-*   [ ] **`saan_cli`:**
-    *   [ ] Adopt `clap` for argument parsing.
-    *   [ ] `saan init [path] [--force]` — create empty `.saan` file.
-    *   [ ] `saan prepare <input> [--store path]` — walk inputs, dispatch to Shavers, write Strands to staging.
-    *   [ ] `saan apply [--store path]` — UPSERT staging into final tables in one transaction.
-    *   [ ] `saan interlace` / `inspect` / `view` — keep parser entries, exit non-zero with "not implemented in Phase 1".
-*   [ ] **Testing:**
-    *   [ ] Unit tests for `graph`, `strand`, `shaver`, `shavers::sql`, `store` (idempotence is the key property).
-    *   [ ] Integration tests for the full library pipeline against fixture `.sql` files.
-    *   [ ] CLI integration tests for `init && prepare && apply`, idempotent re-runs, and "not implemented" exits.
+*   [x] **`saan_core`:**
+    *   [x] Replace custom `Graph` with a `petgraph::stable_graph::StableDiGraph` wrapper.
+    *   [x] `Strand` type — bundle of nodes/edges produced by one shave.
+    *   [x] Public `Shaver` trait + `ShaverError` + `ShaverRegistry`.
+    *   [x] `SqlShaver` (built-in): handles `CREATE TABLE AS`, `CREATE VIEW AS`, `INSERT INTO ... SELECT`, bare `SELECT`, with correct CTE / subquery / qualified-name handling. Uses `sqlparser-rs` (Generic dialect).
+    *   [x] `Store` — DuckDB-backed `.saan` file: `open`, `init_schema`, `write_strands_to_staging`, `apply_staging`, `load_graph`.
+*   [x] **`saan_cli`:**
+    *   [x] Adopt `clap` for argument parsing.
+    *   [x] `saan init [path] [--force]` — create empty `.saan` file.
+    *   [x] `saan prepare <input> [--store path]` — walk inputs, dispatch to Shavers, write Strands to staging.
+    *   [x] `saan apply [--store path]` — UPSERT staging into final tables in one transaction.
+    *   [x] `saan interlace` / `inspect` / `view` — keep parser entries, exit non-zero with "not implemented in Phase 1".
+*   [x] **Testing:**
+    *   [x] Unit tests for `graph`, `strand`, `shaver`, `shavers::sql`, `store` (idempotence is the key property).
+    *   [x] Integration tests for the full library pipeline against fixture `.sql` files.
+    *   [x] CLI integration tests for `init && prepare && apply`, idempotent re-runs, and "not implemented" exits.
 
 ## Phase 2 — Validation
 
