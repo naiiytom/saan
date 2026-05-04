@@ -2,6 +2,19 @@ use anyhow::{Context as _, Result, bail};
 use saan_core::Store;
 use std::path::Path;
 
+const LIST_LIMIT: usize = 10;
+
+fn format_list(items: &[String]) -> String {
+    if items.is_empty() {
+        return "none".to_string();
+    }
+    let mut s = items[..items.len().min(LIST_LIMIT)].join(", ");
+    if items.len() > LIST_LIMIT {
+        s.push_str(&format!(" ...and {} more", items.len() - LIST_LIMIT));
+    }
+    s
+}
+
 pub fn run(store_path: &Path) -> Result<()> {
     if !store_path.exists() {
         bail!(
@@ -25,20 +38,12 @@ pub fn run(store_path: &Path) -> Result<()> {
     println!(
         "Orphan nodes  ({}): {}",
         report.orphan_nodes.len(),
-        if report.orphan_nodes.is_empty() {
-            "none".to_string()
-        } else {
-            report.orphan_nodes.join(", ")
-        }
+        format_list(&report.orphan_nodes),
     );
     println!(
         "External refs ({}): {}",
         report.external_refs.len(),
-        if report.external_refs.is_empty() {
-            "none".to_string()
-        } else {
-            report.external_refs.join(", ")
-        }
+        format_list(&report.external_refs),
     );
 
     Ok(())
