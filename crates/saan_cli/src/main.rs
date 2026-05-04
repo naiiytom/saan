@@ -2,6 +2,7 @@ mod commands;
 
 use anyhow::Result;
 use clap::{Parser, Subcommand};
+use commands::query::OutputFormat;
 use std::path::PathBuf;
 use saan_core::SqlDialect;
 
@@ -96,6 +97,17 @@ enum Commands {
         #[arg(long, default_value = "lineage.html")]
         out: PathBuf,
     },
+    /// Run an ad-hoc SQL query against the store
+    Query {
+        /// SQL statement to execute
+        sql: String,
+        /// Path to the .saan store
+        #[arg(long, default_value = ".saan")]
+        store: PathBuf,
+        /// Output format
+        #[arg(long, value_enum, default_value = "table")]
+        format: OutputFormat,
+    },
 }
 
 fn main() -> Result<()> {
@@ -110,6 +122,7 @@ fn main() -> Result<()> {
         Commands::Interlace { store } => commands::interlace::run(&store)?,
         Commands::Inspect { store } => commands::inspect::run(&store)?,
         Commands::View { store, out } => commands::view::run(&store, &out)?,
+        Commands::Query { sql, store, format } => commands::query::run(&sql, &store, &format)?,
     }
 
     Ok(())

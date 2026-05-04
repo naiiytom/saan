@@ -256,6 +256,117 @@ fn prepare_apply_idempotent() {
 }
 
 #[test]
+fn query_returns_table_output() {
+    let dir = tempdir().unwrap();
+    let store_path = dir.path().join(".saan");
+    let sql_path = dir.path().join("pipeline.sql");
+
+    std::fs::write(
+        &sql_path,
+        b"CREATE TABLE stg.orders AS SELECT * FROM raw.orders;",
+    )
+    .unwrap();
+
+    saan().arg("init").arg(dir.path()).assert().success();
+    saan()
+        .arg("prepare").arg(dir.path())
+        .arg("--store").arg(&store_path)
+        .assert().success();
+    saan()
+        .arg("apply")
+        .arg("--store").arg(&store_path)
+        .assert().success();
+
+    saan()
+        .arg("query")
+        .arg("SELECT COUNT(*) AS cnt FROM nodes")
+        .arg("--store").arg(&store_path)
+        .assert()
+        .success()
+        .stdout(contains("cnt"))
+        .stdout(contains("2"));
+}
+
+#[test]
+fn query_csv_format() {
+    let dir = tempdir().unwrap();
+    let store_path = dir.path().join(".saan");
+    let sql_path = dir.path().join("pipeline.sql");
+
+    std::fs::write(
+        &sql_path,
+        b"CREATE TABLE stg.orders AS SELECT * FROM raw.orders;",
+    )
+    .unwrap();
+
+    saan().arg("init").arg(dir.path()).assert().success();
+    saan()
+        .arg("prepare").arg(dir.path())
+        .arg("--store").arg(&store_path)
+        .assert().success();
+    saan()
+        .arg("apply")
+        .arg("--store").arg(&store_path)
+        .assert().success();
+
+    saan()
+        .arg("query")
+        .arg("SELECT id FROM nodes ORDER BY id")
+        .arg("--store").arg(&store_path)
+        .arg("--format").arg("csv")
+        .assert()
+        .success()
+        .stdout(contains("id\n"));
+}
+
+#[test]
+fn query_json_format() {
+    let dir = tempdir().unwrap();
+    let store_path = dir.path().join(".saan");
+    let sql_path = dir.path().join("pipeline.sql");
+
+    std::fs::write(
+        &sql_path,
+        b"CREATE TABLE stg.orders AS SELECT * FROM raw.orders;",
+    )
+    .unwrap();
+
+    saan().arg("init").arg(dir.path()).assert().success();
+    saan()
+        .arg("prepare").arg(dir.path())
+        .arg("--store").arg(&store_path)
+        .assert().success();
+    saan()
+        .arg("apply")
+        .arg("--store").arg(&store_path)
+        .assert().success();
+
+    saan()
+        .arg("query")
+        .arg("SELECT id FROM nodes ORDER BY id")
+        .arg("--store").arg(&store_path)
+        .arg("--format").arg("json")
+        .assert()
+        .success()
+        .stdout(contains("[{"))
+        .stdout(contains("\"id\""));
+}
+
+#[test]
+fn query_missing_store_exits_nonzero() {
+    let dir = tempdir().unwrap();
+    let store_path = dir.path().join(".saan");
+
+    saan()
+        .arg("query")
+        .arg("SELECT 1")
+        .arg("--store").arg(&store_path)
+        .assert()
+        .failure()
+        .stderr(contains("store not found"));
+}
+
+#[test]
 fn prepare_with_postgres_dialect_parses_cast_syntax() {
     let dir = tempdir().unwrap();
     let store_path = dir.path().join(".saan");

@@ -1,0 +1,12 @@
+[package]
+name = "saan_py"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "saan_ops"
+crate-type = ["cdylib"]
+
+[dependencies]
+saan_core = { path = "../saan_core" }
+pyo3 = { version = "0.23", features = ["extension-module"] }

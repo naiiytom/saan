@@ -36,17 +36,17 @@ The thinnest end-to-end slice that proves the lineage premise. See `IMPLEMENTATI
 *   [ ] **`saan view` (HTML+SVG):** compile the graph into a single static HTML file with an inline SVG render. No server, no WASM yet — just something a user can open in a browser.
 *   [ ] **`saan_mesh` (WASM React):** the full "Woven Mesh" interactive visualizer. Replaces the static HTML for interactive exploration.
 
-## Phase 4 — Python SDK
+## Phase 4 — Python SDK ✅
 
-*   [ ] PyO3 bindings via `maturin` for the public `saan_core` surface (`Store`, `Shaver`, `ShaverRegistry`, `Graph`).
-*   [ ] `saan_ops.connect(path)` returns a real `SaanConnection` backed by the Rust core.
-*   [ ] `prepare`, `apply`, `interlace`, `inspect`, `view` mirror the CLI.
+*   [x] PyO3 bindings via `maturin` for the public `saan_core` surface (`Store`, `Shaver`, `ShaverRegistry`).
+*   [x] `saan_ops.connect(path)` returns a real `SaanConnection` backed by the Rust core.
+*   [x] `prepare`, `apply`, `interlace`, `inspect` mirror the CLI.
 
-## Phase 5 — Ad-Hoc Query
+## Phase 5 — Ad-Hoc Query ✅
 
-*   [ ] **`saan query "SELECT ..."`** — expose The Store via a SQL passthrough on the CLI.
-*   [ ] **`db.query(sql).to_pandas()` / `.to_polars()` / `.to_arrow()`** — Python SDK convenience.
-*   [ ] Query layer is thin: it reads from the same DuckDB store that lineage writes to. No separate ingestion path.
+*   [x] **`saan query "SELECT ..."`** — SQL passthrough on the CLI with `--format table|csv|json`.
+*   [x] **`conn.query(sql).to_pandas()` / `.to_polars()` / `.to_arrow()`** — Python SDK convenience.
+*   [x] Query layer is thin: reads from the same DuckDB store that lineage writes to.
 
 ## Phase 6 — Ecosystem & Additional Shavers
 

@@ -3,5 +3,6 @@ members = [
     "crates/saan_core",
     "crates/saan_cli",
     "crates/saan_mesh",
+    "crates/saan_py",
 ]
 resolver = "2"

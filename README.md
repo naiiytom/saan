@@ -41,14 +41,14 @@ saan_cli inspect --store my-project/.saan
 | `saan interlace [--store]` | Done | Compute transitive edges in staging |
 | `saan apply [--store]` | Done | Promote staging into the final graph |
 | `saan inspect [--store]` | Done | Report orphan nodes, cycles, external refs |
-| `saan view [--store] [--out]` | Phase 3 | Render graph to HTML+SVG |
-| `saan query <sql> [--store] [--format]` | Phase 5 | SQL passthrough on the store |
+| `saan view [--store] [--out]` | Done | Render graph to HTML+SVG |
+| `saan query <sql> [--store] [--format]` | Done | SQL passthrough on the store |
 
 ### Supported SQL dialects (`--dialect`)
 
 `generic` (default) · `ansi` · `postgres` · `mysql` · `mssql` · `bigquery` · `snowflake` · `hive` · `redshift` · `sqlite` · `duckdb` · `clickhouse`
 
-## Python SDK (Phase 4)
+## Python SDK
 
 ```python
 import saan_ops
@@ -61,8 +61,17 @@ conn.apply()
 report = conn.inspect()
 print(report.total_nodes, report.total_edges)
 
-# Phase 5
 df = conn.query("SELECT * FROM nodes").to_pandas()
+```
+
+### Dev setup
+
+```powershell
+cd sdk/python
+uv venv .venv
+maturin develop --uv         # builds Rust extension + installs into .venv
+uv pip install --python .venv/Scripts/python.exe pytest
+.venv/Scripts/python -m pytest tests/
 ```
 
 ## Building on Windows
@@ -77,9 +86,9 @@ Linux/macOS are unaffected.
 |-------|-------|--------|
 | 1 — Lineage Spine | `init`, `prepare`, `apply`, core graph + store | Done |
 | 2 — Validation | `inspect`, `interlace`, SQL dialect config | Done |
-| 3 — Visualization | `saan view` HTML+SVG, WASM React mesh | Pending |
-| 4 — Python SDK | PyO3 bindings, `maturin` package | Pending |
-| 5 — Ad-Hoc Query | `saan query`, `.to_pandas()` | Pending |
+| 3 — Visualization | `saan view` HTML+SVG, WASM React mesh | Done |
+| 4 — Python SDK | PyO3 bindings, `maturin` package | Done |
+| 5 — Ad-Hoc Query | `saan query`, `.to_pandas()` | Done |
 | 6 — Ecosystem | dbt Shaver, plugin system, parallel ingestion, Docker | Pending |
 
 ## Documentation

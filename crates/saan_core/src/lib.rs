@@ -10,5 +10,5 @@ pub use html::wrap_svg_in_html;
 pub use render::{SvgConfig, SvgRenderer};
 pub use shaver::{Shaver, ShaverError, ShaverRegistry};
 pub use shaver::sql::SqlDialect;
-pub use store::{InspectReport, Store, StoreError};
+pub use store::{InspectReport, QueryResult, Store, StoreError};
 pub use strand::Strand;

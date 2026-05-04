@@ -1,21 +1,26 @@
 [build-system]
-requires = ["setuptools>=42"]
-build-backend = "setuptools.build_meta"
+requires = ["maturin>=1.7,<2"]
+build-backend = "maturin"
 
 [project]
 name = "saan-ops"
 version = "0.1.0"
-description = "Python SDK for Saan — The Hand"
+description = "Python SDK for Saan — data lineage platform"
 requires-python = ">=3.9"
-dependencies = [
-    # "duckdb",
-    # "polars",
-]
+dependencies = []
 
 [project.optional-dependencies]
 dev = [
     "pytest>=7",
 ]
+pandas = ["pandas>=1.5"]
+polars = ["polars>=0.20"]
+arrow = ["pyarrow>=14"]
+
+[tool.maturin]
+manifest-path = "../../crates/saan_py/Cargo.toml"
+module-name = "saan_ops._core"
+python-source = "."
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -25,6 +25,12 @@ wheels/
 .installed.cfg
 *.egg
 
+# Python SDK virtual env and maturin artifacts
+sdk/python/.venv/
+sdk/python/*.pyd
+sdk/python/saan_ops/_core*.pyd
+sdk/python/saan_ops/_core*.so
+
 # IDEs
 .idea/
 .vscode/
