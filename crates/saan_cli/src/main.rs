@@ -87,8 +87,15 @@ enum Commands {
         #[arg(long, default_value = ".saan")]
         store: PathBuf,
     },
-    /// Launch the WASM visualizer [not implemented in Phase 1]
-    View,
+    /// Render the lineage graph to a self-contained HTML file
+    View {
+        /// Path to the .saan store
+        #[arg(long, default_value = ".saan")]
+        store: PathBuf,
+        /// Output HTML file path
+        #[arg(long, default_value = "lineage.html")]
+        out: PathBuf,
+    },
 }
 
 fn main() -> Result<()> {
@@ -102,10 +109,7 @@ fn main() -> Result<()> {
         Commands::Apply { store } => commands::apply::run(&store)?,
         Commands::Interlace { store } => commands::interlace::run(&store)?,
         Commands::Inspect { store } => commands::inspect::run(&store)?,
-        Commands::View => {
-            eprintln!("not implemented in Phase 1");
-            std::process::exit(1);
-        }
+        Commands::View { store, out } => commands::view::run(&store, &out)?,
     }
 
     Ok(())
