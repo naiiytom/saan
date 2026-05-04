@@ -5,5 +5,6 @@ pub mod strand;
 
 pub use graph::{Edge, Graph, Node};
 pub use shaver::{Shaver, ShaverError, ShaverRegistry};
-pub use store::{Store, StoreError};
+pub use shaver::sql::SqlDialect;
+pub use store::{InspectReport, Store, StoreError};
 pub use strand::Strand;

@@ -4,14 +4,53 @@ use std::path::Path;
 use sqlparser::ast::{
     Ident, ObjectName, Query, Select, SetExpr, Statement, TableFactor, TableWithJoins,
 };
-use sqlparser::dialect::GenericDialect;
+use sqlparser::dialect::{
+    AnsiDialect, BigQueryDialect, ClickHouseDialect, DuckDbDialect, GenericDialect,
+    HiveDialect, MsSqlDialect, MySqlDialect, PostgreSqlDialect, RedshiftSqlDialect,
+    SnowflakeDialect, SQLiteDialect,
+};
 use sqlparser::parser::Parser;
 
 use crate::graph::{Edge, Node};
 use crate::shaver::{Shaver, ShaverError};
 use crate::strand::Strand;
 
-pub struct SqlShaver;
+#[derive(Debug, Clone, Default)]
+pub enum SqlDialect {
+    #[default]
+    Generic,
+    Ansi,
+    Postgres,
+    MySql,
+    MsSql,
+    BigQuery,
+    Snowflake,
+    Hive,
+    Redshift,
+    SQLite,
+    DuckDb,
+    ClickHouse,
+}
+
+pub struct SqlShaver {
+    dialect: SqlDialect,
+}
+
+impl SqlShaver {
+    pub fn new() -> Self {
+        Self { dialect: SqlDialect::Generic }
+    }
+
+    pub fn with_dialect(dialect: SqlDialect) -> Self {
+        Self { dialect }
+    }
+}
+
+impl Default for SqlShaver {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 impl Shaver for SqlShaver {
     fn name(&self) -> &str {
@@ -28,11 +67,28 @@ impl Shaver for SqlShaver {
             source: e,
         })?;
 
-        let statements =
-            Parser::parse_sql(&GenericDialect {}, &sql).map_err(|e| ShaverError::Parse {
-                path: input.to_path_buf(),
-                message: e.to_string(),
-            })?;
+        let statements = {
+            let parse = |d: &dyn sqlparser::dialect::Dialect| {
+                Parser::parse_sql(d, &sql).map_err(|e| ShaverError::Parse {
+                    path: input.to_path_buf(),
+                    message: e.to_string(),
+                })
+            };
+            match &self.dialect {
+                SqlDialect::Generic    => parse(&GenericDialect {}),
+                SqlDialect::Ansi       => parse(&AnsiDialect {}),
+                SqlDialect::Postgres   => parse(&PostgreSqlDialect {}),
+                SqlDialect::MySql      => parse(&MySqlDialect {}),
+                SqlDialect::MsSql      => parse(&MsSqlDialect {}),
+                SqlDialect::BigQuery   => parse(&BigQueryDialect {}),
+                SqlDialect::Snowflake  => parse(&SnowflakeDialect {}),
+                SqlDialect::Hive       => parse(&HiveDialect {}),
+                SqlDialect::Redshift   => parse(&RedshiftSqlDialect {}),
+                SqlDialect::SQLite     => parse(&SQLiteDialect {}),
+                SqlDialect::DuckDb     => parse(&DuckDbDialect {}),
+                SqlDialect::ClickHouse => parse(&ClickHouseDialect {}),
+            }?
+        };
 
         let mut strand = Strand::new(input.to_path_buf());
         for stmt in &statements {
@@ -186,7 +242,7 @@ mod tests {
     fn shave_sql(sql: &str) -> Strand {
         let mut f = NamedTempFile::with_suffix(".sql").unwrap();
         f.write_all(sql.as_bytes()).unwrap();
-        SqlShaver.shave(f.path()).unwrap()
+        SqlShaver::new().shave(f.path()).unwrap()
     }
 
     fn node_ids(strand: &Strand) -> Vec<String> {
@@ -323,5 +379,15 @@ mod tests {
         let ids = node_ids(&strand);
         assert!(ids.contains(&"raw.events_a".to_string()));
         assert!(ids.contains(&"raw.events_b".to_string()));
+    }
+
+    #[test]
+    fn postgres_dialect_parses_double_colon_cast() {
+        // PostgreSQL-specific :: cast syntax — GenericDialect rejects this
+        let shaver = SqlShaver::with_dialect(SqlDialect::Postgres);
+        let mut f = NamedTempFile::with_suffix(".sql").unwrap();
+        f.write_all(b"CREATE TABLE t AS SELECT id::text FROM src").unwrap();
+        let strand = shaver.shave(f.path()).unwrap();
+        assert!(strand.nodes.iter().any(|n| n.id == "t"));
     }
 }

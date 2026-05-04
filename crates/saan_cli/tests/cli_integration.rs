@@ -75,21 +75,68 @@ fn prepare_requires_input_arg() {
 }
 
 #[test]
-fn interlace_exits_nonzero_with_not_implemented() {
+fn interlace_adds_transitive_edge_end_to_end() {
+    let dir = tempdir().unwrap();
+    let store_path = dir.path().join(".saan");
+    let sql_path = dir.path().join("pipeline.sql");
+
+    // a → b → c; interlace should compute a → c
+    std::fs::write(
+        &sql_path,
+        b"CREATE TABLE b AS SELECT * FROM a;\nCREATE TABLE c AS SELECT * FROM b;",
+    )
+    .unwrap();
+
+    saan().arg("init").arg(dir.path()).assert().success();
+    saan()
+        .arg("prepare").arg(dir.path())
+        .arg("--store").arg(&store_path)
+        .assert().success();
+
     saan()
         .arg("interlace")
+        .arg("--store").arg(&store_path)
         .assert()
-        .failure()
-        .stderr(contains("not implemented"));
+        .success()
+        .stdout(contains("1 computed edge"));
+
+    saan()
+        .arg("apply")
+        .arg("--store").arg(&store_path)
+        .assert()
+        .success()
+        .stdout(contains("3 edge(s)"));
 }
 
 #[test]
-fn inspect_exits_nonzero_with_not_implemented() {
+fn inspect_reports_node_and_edge_counts() {
+    let dir = tempdir().unwrap();
+    let store_path = dir.path().join(".saan");
+    let sql_path = dir.path().join("pipeline.sql");
+
+    std::fs::write(
+        &sql_path,
+        b"CREATE TABLE stg.orders AS SELECT * FROM raw.orders;",
+    )
+    .unwrap();
+
+    saan().arg("init").arg(dir.path()).assert().success();
+    saan()
+        .arg("prepare").arg(dir.path())
+        .arg("--store").arg(&store_path)
+        .assert().success();
+    saan()
+        .arg("apply")
+        .arg("--store").arg(&store_path)
+        .assert().success();
+
     saan()
         .arg("inspect")
+        .arg("--store").arg(&store_path)
         .assert()
-        .failure()
-        .stderr(contains("not implemented"));
+        .success()
+        .stdout(contains("Nodes:"))
+        .stdout(contains("Edges:"));
 }
 
 #[test]
@@ -126,6 +173,7 @@ fn full_pipeline_end_to_end() {
         .arg(&store_path)
         .assert()
         .success()
+        .stdout(contains("Staged:"))
         .stdout(contains("node(s)"));
 
     // apply
@@ -177,4 +225,23 @@ fn prepare_apply_idempotent() {
         .assert()
         .success()
         .stdout(contains("2 node(s), 1 edge(s)"));
+}
+
+#[test]
+fn prepare_with_postgres_dialect_parses_cast_syntax() {
+    let dir = tempdir().unwrap();
+    let store_path = dir.path().join(".saan");
+    let sql_path = dir.path().join("cast.sql");
+
+    std::fs::write(&sql_path, b"CREATE TABLE t AS SELECT id::text FROM src").unwrap();
+
+    saan().arg("init").arg(dir.path()).assert().success();
+
+    saan()
+        .arg("prepare")
+        .arg(dir.path())
+        .arg("--store").arg(&store_path)
+        .arg("--dialect").arg("postgres")
+        .assert()
+        .success();
 }
