@@ -26,20 +26,20 @@ export function GraphView({ svgString }: Props) {
       vp.setAttribute("transform", `translate(${tx},${ty}) scale(${scale})`);
     };
 
-    svg.addEventListener("mousedown", (e) => {
+    const onMouseDown = (e: MouseEvent) => {
       dragging = true;
       startX = e.clientX - tx;
       startY = e.clientY - ty;
       e.preventDefault();
-    });
-    window.addEventListener("mousemove", (e) => {
+    };
+    const onMouseMove = (e: MouseEvent) => {
       if (!dragging) return;
       tx = e.clientX - startX;
       ty = e.clientY - startY;
       update();
-    });
-    window.addEventListener("mouseup", () => { dragging = false; });
-    svg.addEventListener("wheel", (e) => {
+    };
+    const onMouseUp = () => { dragging = false; };
+    const onWheel = (e: WheelEvent) => {
       e.preventDefault();
       const factor = e.deltaY < 0 ? 1.1 : 0.9;
       const rect = svg.getBoundingClientRect();
@@ -49,7 +49,19 @@ export function GraphView({ svgString }: Props) {
       ty = my - factor * (my - ty);
       scale *= factor;
       update();
-    }, { passive: false });
+    };
+
+    svg.addEventListener("mousedown", onMouseDown);
+    window.addEventListener("mousemove", onMouseMove);
+    window.addEventListener("mouseup", onMouseUp);
+    svg.addEventListener("wheel", onWheel, { passive: false });
+
+    return () => {
+      svg.removeEventListener("mousedown", onMouseDown);
+      window.removeEventListener("mousemove", onMouseMove);
+      window.removeEventListener("mouseup", onMouseUp);
+      svg.removeEventListener("wheel", onWheel);
+    };
   }, [svgString]);
 
   return <div ref={containerRef} style={{ width: "100%", height: "100%" }} />;

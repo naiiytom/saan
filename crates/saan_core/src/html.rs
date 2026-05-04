@@ -1,4 +1,12 @@
+fn escape_html(s: &str) -> String {
+    s.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+}
+
 pub fn wrap_svg_in_html(svg: &str, title: &str) -> String {
+    let title = escape_html(title);
     format!(
         "<!DOCTYPE html>\n\
          <html lang=\"en\">\n\

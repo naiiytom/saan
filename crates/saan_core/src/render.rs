@@ -53,7 +53,8 @@ impl SvgRenderer {
             </defs>",
         );
 
-        // Edges
+        svg.push_str("<g id=\"viewport\">");
+
         svg.push_str("<g id=\"edges\">");
         for edge in edges {
             if let (Some(&(x1, y1)), Some(&(x2, y2))) = (
@@ -81,7 +82,6 @@ impl SvgRenderer {
         }
         svg.push_str("</g>");
 
-        // Nodes
         svg.push_str("<g id=\"nodes\">");
         for (node, &(cx, cy)) in nodes.iter().zip(positions.iter()) {
             let label = escape_xml(&node.label);
@@ -97,6 +97,8 @@ impl SvgRenderer {
             ));
         }
         svg.push_str("</g>");
+
+        svg.push_str("</g>"); // close viewport
 
         if n == 0 {
             svg.push_str(&format!(
@@ -178,5 +180,13 @@ mod tests {
         let svg = SvgRenderer::render(&g, &SvgConfig::default());
         assert!(svg.contains("A &amp; &lt;B&gt;"));
         assert!(!svg.contains("A & <B>"));
+    }
+
+    #[test]
+    fn svg_contains_viewport_group_for_pan_zoom() {
+        let mut g = Graph::new();
+        g.add_node(Node::new("a", "A", "sql"));
+        let svg = SvgRenderer::render(&g, &SvgConfig::default());
+        assert!(svg.contains("<g id=\"viewport\">"), "must have viewport group for pan/zoom");
     }
 }

@@ -74,6 +74,7 @@ pub fn render_graph(nodes_json: &str, edges_json: &str, config_json: &str) -> St
 struct ConfigData {
     width: Option<u32>,
     height: Option<u32>,
+    show_labels: Option<bool>,
     background_color: Option<String>,
 }
 
@@ -83,7 +84,7 @@ fn parse_config(json: &str) -> RenderConfig {
     RenderConfig {
         width: data.width.unwrap_or(defaults.width),
         height: data.height.unwrap_or(defaults.height),
-        show_labels: true,
+        show_labels: data.show_labels.unwrap_or(defaults.show_labels),
         background_color: data.background_color.unwrap_or(defaults.background_color),
     }
 }
