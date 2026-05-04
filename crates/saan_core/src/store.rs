@@ -1,8 +1,8 @@
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::Path;
 
-use duckdb::types::Value;
 use duckdb::Connection;
+use duckdb::types::Value;
 use thiserror::Error;
 
 use crate::graph::{Edge, Graph, Node};
@@ -53,7 +53,11 @@ fn value_to_string(v: Value) -> String {
         Value::Date32(d) => d.to_string(),
         Value::Time64(_, t) => t.to_string(),
         Value::Timestamp(_, ts) => ts.to_string(),
-        Value::Interval { months, days, nanos } => {
+        Value::Interval {
+            months,
+            days,
+            nanos,
+        } => {
             format!("{months}mo {days}d {nanos}ns")
         }
         Value::List(items) => {
@@ -75,7 +79,13 @@ fn value_to_string(v: Value) -> String {
         Value::Map(pairs) => {
             let parts: Vec<String> = pairs
                 .iter()
-                .map(|(k, v)| format!("{}: {}", value_to_string(k.clone()), value_to_string(v.clone())))
+                .map(|(k, v)| {
+                    format!(
+                        "{}: {}",
+                        value_to_string(k.clone()),
+                        value_to_string(v.clone())
+                    )
+                })
                 .collect();
             format!("{{{}}}", parts.join(", "))
         }
@@ -186,9 +196,13 @@ impl Store {
     }
 
     pub fn interlace_staging(&self) -> Result<usize, StoreError> {
-        let mut stmt = self.conn.prepare("SELECT from_id, to_id FROM staging_edges")?;
+        let mut stmt = self
+            .conn
+            .prepare("SELECT from_id, to_id FROM staging_edges")?;
         let pairs: Vec<(String, String)> = stmt
-            .query_map([], |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)))?
+            .query_map([], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+            })?
             .collect::<Result<Vec<_>, _>>()?;
 
         if pairs.is_empty() {

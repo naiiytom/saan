@@ -42,7 +42,11 @@ fn print_table(result: &QueryResult) {
         }
     }
 
-    let separator: String = widths.iter().map(|w| "-".repeat(w + 2)).collect::<Vec<_>>().join("+");
+    let separator: String = widths
+        .iter()
+        .map(|w| "-".repeat(w + 2))
+        .collect::<Vec<_>>()
+        .join("+");
     let separator = format!("+{}+", separator);
 
     let header: String = result
@@ -61,7 +65,13 @@ fn print_table(result: &QueryResult) {
         let line: String = widths
             .iter()
             .enumerate()
-            .map(|(i, w)| format!(" {:width$} ", row.get(i).map(|s| s.as_str()).unwrap_or(""), width = w))
+            .map(|(i, w)| {
+                format!(
+                    " {:width$} ",
+                    row.get(i).map(|s| s.as_str()).unwrap_or(""),
+                    width = w
+                )
+            })
             .collect::<Vec<_>>()
             .join("|");
         println!("|{}|", line);

@@ -1,7 +1,7 @@
-use wasm_bindgen::prelude::*;
 use serde::Deserialize;
 use std::collections::HashMap;
 use std::f64::consts::{FRAC_PI_2, TAU};
+use wasm_bindgen::prelude::*;
 
 const NODE_RADIUS: f64 = 24.0;
 

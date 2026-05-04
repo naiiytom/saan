@@ -89,20 +89,25 @@ fn interlace_adds_transitive_edge_end_to_end() {
 
     saan().arg("init").arg(dir.path()).assert().success();
     saan()
-        .arg("prepare").arg(dir.path())
-        .arg("--store").arg(&store_path)
-        .assert().success();
+        .arg("prepare")
+        .arg(dir.path())
+        .arg("--store")
+        .arg(&store_path)
+        .assert()
+        .success();
 
     saan()
         .arg("interlace")
-        .arg("--store").arg(&store_path)
+        .arg("--store")
+        .arg(&store_path)
         .assert()
         .success()
         .stdout(contains("1 computed edge"));
 
     saan()
         .arg("apply")
-        .arg("--store").arg(&store_path)
+        .arg("--store")
+        .arg(&store_path)
         .assert()
         .success()
         .stdout(contains("3 edge(s)"));
@@ -122,17 +127,23 @@ fn inspect_reports_node_and_edge_counts() {
 
     saan().arg("init").arg(dir.path()).assert().success();
     saan()
-        .arg("prepare").arg(dir.path())
-        .arg("--store").arg(&store_path)
-        .assert().success();
+        .arg("prepare")
+        .arg(dir.path())
+        .arg("--store")
+        .arg(&store_path)
+        .assert()
+        .success();
     saan()
         .arg("apply")
-        .arg("--store").arg(&store_path)
-        .assert().success();
+        .arg("--store")
+        .arg(&store_path)
+        .assert()
+        .success();
 
     saan()
         .arg("inspect")
-        .arg("--store").arg(&store_path)
+        .arg("--store")
+        .arg(&store_path)
         .assert()
         .success()
         .stdout(contains("Nodes:"))
@@ -154,18 +165,25 @@ fn view_writes_html_file_with_svg() {
 
     saan().arg("init").arg(dir.path()).assert().success();
     saan()
-        .arg("prepare").arg(dir.path())
-        .arg("--store").arg(&store_path)
-        .assert().success();
+        .arg("prepare")
+        .arg(dir.path())
+        .arg("--store")
+        .arg(&store_path)
+        .assert()
+        .success();
     saan()
         .arg("apply")
-        .arg("--store").arg(&store_path)
-        .assert().success();
+        .arg("--store")
+        .arg(&store_path)
+        .assert()
+        .success();
 
     saan()
         .arg("view")
-        .arg("--store").arg(&store_path)
-        .arg("--out").arg(&out_path)
+        .arg("--store")
+        .arg(&store_path)
+        .arg("--out")
+        .arg(&out_path)
         .assert()
         .success()
         .stdout(contains("Written:"))
@@ -269,18 +287,24 @@ fn query_returns_table_output() {
 
     saan().arg("init").arg(dir.path()).assert().success();
     saan()
-        .arg("prepare").arg(dir.path())
-        .arg("--store").arg(&store_path)
-        .assert().success();
+        .arg("prepare")
+        .arg(dir.path())
+        .arg("--store")
+        .arg(&store_path)
+        .assert()
+        .success();
     saan()
         .arg("apply")
-        .arg("--store").arg(&store_path)
-        .assert().success();
+        .arg("--store")
+        .arg(&store_path)
+        .assert()
+        .success();
 
     saan()
         .arg("query")
         .arg("SELECT COUNT(*) AS cnt FROM nodes")
-        .arg("--store").arg(&store_path)
+        .arg("--store")
+        .arg(&store_path)
         .assert()
         .success()
         .stdout(contains("cnt"))
@@ -301,19 +325,26 @@ fn query_csv_format() {
 
     saan().arg("init").arg(dir.path()).assert().success();
     saan()
-        .arg("prepare").arg(dir.path())
-        .arg("--store").arg(&store_path)
-        .assert().success();
+        .arg("prepare")
+        .arg(dir.path())
+        .arg("--store")
+        .arg(&store_path)
+        .assert()
+        .success();
     saan()
         .arg("apply")
-        .arg("--store").arg(&store_path)
-        .assert().success();
+        .arg("--store")
+        .arg(&store_path)
+        .assert()
+        .success();
 
     saan()
         .arg("query")
         .arg("SELECT id FROM nodes ORDER BY id")
-        .arg("--store").arg(&store_path)
-        .arg("--format").arg("csv")
+        .arg("--store")
+        .arg(&store_path)
+        .arg("--format")
+        .arg("csv")
         .assert()
         .success()
         .stdout(contains("id\n"));
@@ -333,19 +364,26 @@ fn query_json_format() {
 
     saan().arg("init").arg(dir.path()).assert().success();
     saan()
-        .arg("prepare").arg(dir.path())
-        .arg("--store").arg(&store_path)
-        .assert().success();
+        .arg("prepare")
+        .arg(dir.path())
+        .arg("--store")
+        .arg(&store_path)
+        .assert()
+        .success();
     saan()
         .arg("apply")
-        .arg("--store").arg(&store_path)
-        .assert().success();
+        .arg("--store")
+        .arg(&store_path)
+        .assert()
+        .success();
 
     saan()
         .arg("query")
         .arg("SELECT id FROM nodes ORDER BY id")
-        .arg("--store").arg(&store_path)
-        .arg("--format").arg("json")
+        .arg("--store")
+        .arg(&store_path)
+        .arg("--format")
+        .arg("json")
         .assert()
         .success()
         .stdout(contains("[{"))
@@ -360,7 +398,8 @@ fn query_missing_store_exits_nonzero() {
     saan()
         .arg("query")
         .arg("SELECT 1")
-        .arg("--store").arg(&store_path)
+        .arg("--store")
+        .arg(&store_path)
         .assert()
         .failure()
         .stderr(contains("store not found"));
@@ -379,8 +418,10 @@ fn prepare_with_postgres_dialect_parses_cast_syntax() {
     saan()
         .arg("prepare")
         .arg(dir.path())
-        .arg("--store").arg(&store_path)
-        .arg("--dialect").arg("postgres")
+        .arg("--store")
+        .arg(&store_path)
+        .arg("--dialect")
+        .arg("postgres")
         .assert()
         .success();
 }

@@ -1,7 +1,5 @@
 use pyo3::prelude::*;
-use saan_core::{
-    InspectReport, ShaverRegistry, SqlDialect, Store,
-};
+use saan_core::{InspectReport, ShaverRegistry, SqlDialect, Store};
 use std::path::PathBuf;
 
 use crate::report::_InspectReport;
@@ -31,9 +29,9 @@ impl _SaanConnection {
     }
 
     pub fn apply(&self) -> PyResult<()> {
-        self.store.apply_staging().map_err(|e| {
-            pyo3::exceptions::PyRuntimeError::new_err(format!("apply failed: {e}"))
-        })?;
+        self.store
+            .apply_staging()
+            .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(format!("apply failed: {e}")))?;
         Ok(())
     }
 
@@ -51,9 +49,10 @@ impl _SaanConnection {
     }
 
     pub fn query(&self, sql: &str) -> PyResult<crate::query_result::_QueryResult> {
-        let r = self.store.query(sql).map_err(|e| {
-            pyo3::exceptions::PyRuntimeError::new_err(format!("query failed: {e}"))
-        })?;
+        let r = self
+            .store
+            .query(sql)
+            .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(format!("query failed: {e}")))?;
         Ok(crate::query_result::_QueryResult::from(r))
     }
 }
