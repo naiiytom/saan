@@ -1,3 +1,4 @@
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::Path;
 
 use duckdb::Connection;
@@ -125,6 +126,72 @@ impl Store {
             ",
         )?;
         Ok(())
+    }
+
+    pub fn interlace_staging(&self) -> Result<usize, StoreError> {
+        let mut stmt = self.conn.prepare("SELECT from_id, to_id FROM staging_edges")?;
+        let pairs: Vec<(String, String)> = stmt
+            .query_map([], |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)))?
+            .collect::<Result<Vec<_>, _>>()?;
+
+        if pairs.is_empty() {
+            return Ok(0);
+        }
+
+        let existing: HashSet<(String, String)> = pairs.iter().cloned().collect();
+
+        let mut adj: HashMap<String, Vec<String>> = HashMap::new();
+        for (from, to) in &pairs {
+            adj.entry(from.clone()).or_default().push(to.clone());
+        }
+
+        let sources: Vec<String> = adj.keys().cloned().collect();
+        let mut new_edges: HashSet<(String, String)> = HashSet::new();
+
+        for start in &sources {
+            let mut visited: HashSet<String> = HashSet::new();
+            let mut queue: VecDeque<String> = VecDeque::new();
+            visited.insert(start.clone());
+            queue.push_back(start.clone());
+
+            while let Some(current) = queue.pop_front() {
+                if let Some(neighbors) = adj.get(&current) {
+                    for neighbor in neighbors {
+                        let pair = (start.clone(), neighbor.clone());
+                        if neighbor != start && !existing.contains(&pair) {
+                            new_edges.insert(pair);
+                        }
+                        if visited.insert(neighbor.clone()) {
+                            queue.push_back(neighbor.clone());
+                        }
+                    }
+                }
+            }
+        }
+
+        let count = new_edges.len();
+        if count == 0 {
+            return Ok(0);
+        }
+
+        self.conn.execute_batch("BEGIN")?;
+        let result: Result<(), StoreError> = (|| {
+            let mut stmt = self.conn.prepare(
+                "INSERT INTO staging_edges (from_id, to_id, source_path) VALUES (?, ?, ?)",
+            )?;
+            for (from, to) in &new_edges {
+                stmt.execute(duckdb::params![from, to, "<interlaced>"])?;
+            }
+            Ok(())
+        })();
+        if result.is_err() {
+            let _ = self.conn.execute_batch("ROLLBACK");
+        } else {
+            self.conn.execute_batch("COMMIT")?;
+        }
+        result?;
+
+        Ok(count)
     }
 
     pub fn load_graph(&self) -> Result<Graph, StoreError> {
@@ -318,6 +385,57 @@ mod tests {
 
         let report = store.inspect().unwrap();
         assert!(report.external_refs.contains(&"raw.orders".to_string()));
+    }
+
+    #[test]
+    fn interlace_adds_transitive_edge() {
+        let (store, _dir) = make_store();
+        store
+            .write_strands_to_staging(&[strand_with(
+                &[("a", "A"), ("b", "B"), ("c", "C")],
+                &[("a", "b"), ("b", "c")],
+            )])
+            .unwrap();
+
+        let added = store.interlace_staging().unwrap();
+        assert_eq!(added, 1);
+
+        store.apply_staging().unwrap();
+        let g = store.load_graph().unwrap();
+        assert_eq!(g.edge_count(), 3); // a→b, b→c, a→c
+    }
+
+    #[test]
+    fn interlace_single_hop_adds_nothing() {
+        let (store, _dir) = make_store();
+        store
+            .write_strands_to_staging(&[strand_with(&[("a", "A"), ("b", "B")], &[("a", "b")])])
+            .unwrap();
+
+        let added = store.interlace_staging().unwrap();
+        assert_eq!(added, 0);
+    }
+
+    #[test]
+    fn interlace_empty_staging_is_noop() {
+        let (store, _dir) = make_store();
+        assert_eq!(store.interlace_staging().unwrap(), 0);
+    }
+
+    #[test]
+    fn interlace_is_idempotent() {
+        let (store, _dir) = make_store();
+        store
+            .write_strands_to_staging(&[strand_with(
+                &[("a", "A"), ("b", "B"), ("c", "C")],
+                &[("a", "b"), ("b", "c")],
+            )])
+            .unwrap();
+
+        let first = store.interlace_staging().unwrap();
+        let second = store.interlace_staging().unwrap();
+        assert_eq!(first, 1);
+        assert_eq!(second, 0, "second call must not add duplicate edges");
     }
 
     #[test]
