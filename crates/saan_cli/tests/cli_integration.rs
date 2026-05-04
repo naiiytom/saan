@@ -84,12 +84,34 @@ fn interlace_exits_nonzero_with_not_implemented() {
 }
 
 #[test]
-fn inspect_exits_nonzero_with_not_implemented() {
+fn inspect_reports_node_and_edge_counts() {
+    let dir = tempdir().unwrap();
+    let store_path = dir.path().join(".saan");
+    let sql_path = dir.path().join("pipeline.sql");
+
+    std::fs::write(
+        &sql_path,
+        b"CREATE TABLE stg.orders AS SELECT * FROM raw.orders;",
+    )
+    .unwrap();
+
+    saan().arg("init").arg(dir.path()).assert().success();
+    saan()
+        .arg("prepare").arg(dir.path())
+        .arg("--store").arg(&store_path)
+        .assert().success();
+    saan()
+        .arg("apply")
+        .arg("--store").arg(&store_path)
+        .assert().success();
+
     saan()
         .arg("inspect")
+        .arg("--store").arg(&store_path)
         .assert()
-        .failure()
-        .stderr(contains("not implemented"));
+        .success()
+        .stdout(contains("Nodes:"))
+        .stdout(contains("Edges:"));
 }
 
 #[test]

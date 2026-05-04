@@ -77,8 +77,12 @@ enum Commands {
     },
     /// Define lineage connections [not implemented in Phase 1]
     Interlace,
-    /// Validate the graph structure [not implemented in Phase 1]
-    Inspect,
+    /// Validate the graph structure
+    Inspect {
+        /// Path to the .saan store
+        #[arg(long, default_value = ".saan")]
+        store: PathBuf,
+    },
     /// Launch the WASM visualizer [not implemented in Phase 1]
     View,
 }
@@ -92,7 +96,12 @@ fn main() -> Result<()> {
             commands::prepare::run(&input, &store, dialect.into())?
         }
         Commands::Apply { store } => commands::apply::run(&store)?,
-        Commands::Interlace | Commands::Inspect | Commands::View => {
+        Commands::Interlace => {
+            eprintln!("not implemented in Phase 1");
+            std::process::exit(1);
+        }
+        Commands::Inspect { store } => commands::inspect::run(&store)?,
+        Commands::View => {
             eprintln!("not implemented in Phase 1");
             std::process::exit(1);
         }
