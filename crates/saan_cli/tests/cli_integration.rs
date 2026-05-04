@@ -75,12 +75,37 @@ fn prepare_requires_input_arg() {
 }
 
 #[test]
-fn interlace_exits_nonzero_with_not_implemented() {
+fn interlace_adds_transitive_edge_end_to_end() {
+    let dir = tempdir().unwrap();
+    let store_path = dir.path().join(".saan");
+    let sql_path = dir.path().join("pipeline.sql");
+
+    // a → b → c; interlace should compute a → c
+    std::fs::write(
+        &sql_path,
+        b"CREATE TABLE b AS SELECT * FROM a;\nCREATE TABLE c AS SELECT * FROM b;",
+    )
+    .unwrap();
+
+    saan().arg("init").arg(dir.path()).assert().success();
+    saan()
+        .arg("prepare").arg(dir.path())
+        .arg("--store").arg(&store_path)
+        .assert().success();
+
     saan()
         .arg("interlace")
+        .arg("--store").arg(&store_path)
         .assert()
-        .failure()
-        .stderr(contains("not implemented"));
+        .success()
+        .stdout(contains("1 computed edge"));
+
+    saan()
+        .arg("apply")
+        .arg("--store").arg(&store_path)
+        .assert()
+        .success()
+        .stdout(contains("3 edge(s)"));
 }
 
 #[test]
