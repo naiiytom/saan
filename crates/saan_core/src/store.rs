@@ -12,6 +12,7 @@ pub enum StoreError {
     Db(#[from] duckdb::Error),
 }
 
+#[derive(Debug, PartialEq, Clone)]
 pub struct InspectReport {
     pub total_nodes: usize,
     pub total_edges: usize,
