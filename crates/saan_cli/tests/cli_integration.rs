@@ -140,12 +140,40 @@ fn inspect_reports_node_and_edge_counts() {
 }
 
 #[test]
-fn view_exits_nonzero_with_not_implemented() {
+fn view_writes_html_file_with_svg() {
+    let dir = tempdir().unwrap();
+    let store_path = dir.path().join(".saan");
+    let sql_path = dir.path().join("pipeline.sql");
+    let out_path = dir.path().join("lineage.html");
+
+    std::fs::write(
+        &sql_path,
+        b"CREATE TABLE stg.orders AS SELECT * FROM raw.orders;",
+    )
+    .unwrap();
+
+    saan().arg("init").arg(dir.path()).assert().success();
+    saan()
+        .arg("prepare").arg(dir.path())
+        .arg("--store").arg(&store_path)
+        .assert().success();
+    saan()
+        .arg("apply")
+        .arg("--store").arg(&store_path)
+        .assert().success();
+
     saan()
         .arg("view")
+        .arg("--store").arg(&store_path)
+        .arg("--out").arg(&out_path)
         .assert()
-        .failure()
-        .stderr(contains("not implemented"));
+        .success()
+        .stdout(contains("Written:"))
+        .stdout(contains("node(s)"));
+
+    let content = std::fs::read_to_string(&out_path).unwrap();
+    assert!(content.contains("<!DOCTYPE html>"), "output must be HTML");
+    assert!(content.contains("<svg"), "output must contain SVG");
 }
 
 /// Full init → prepare → apply pipeline with a fixture SQL file.
