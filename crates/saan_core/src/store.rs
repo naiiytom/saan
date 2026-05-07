@@ -2,6 +2,7 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::Path;
 
 use duckdb::Connection;
+use duckdb::types::Value;
 use thiserror::Error;
 
 use crate::graph::{Edge, Graph, Node};
@@ -11,6 +12,13 @@ use crate::strand::Strand;
 pub enum StoreError {
     #[error("database error: {0}")]
     Db(#[from] duckdb::Error),
+    #[error("{0}")]
+    QueryNotAllowed(String),
+}
+
+pub struct QueryResult {
+    pub columns: Vec<String>,
+    pub rows: Vec<Vec<String>>,
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -24,6 +32,67 @@ pub struct InspectReport {
 
 pub struct Store {
     conn: Connection,
+}
+
+fn value_to_string(v: Value) -> String {
+    match v {
+        Value::Null => "NULL".to_string(),
+        Value::Boolean(b) => b.to_string(),
+        Value::TinyInt(n) => n.to_string(),
+        Value::SmallInt(n) => n.to_string(),
+        Value::Int(n) => n.to_string(),
+        Value::BigInt(n) => n.to_string(),
+        Value::HugeInt(n) => n.to_string(),
+        Value::UTinyInt(n) => n.to_string(),
+        Value::USmallInt(n) => n.to_string(),
+        Value::UInt(n) => n.to_string(),
+        Value::UBigInt(n) => n.to_string(),
+        Value::Float(f) => f.to_string(),
+        Value::Double(f) => f.to_string(),
+        Value::Decimal(d) => d.to_string(),
+        Value::Text(s) => s,
+        Value::Blob(b) => format!("<blob {} bytes>", b.len()),
+        Value::Date32(d) => d.to_string(),
+        Value::Time64(_, t) => t.to_string(),
+        Value::Timestamp(_, ts) => ts.to_string(),
+        Value::Interval {
+            months,
+            days,
+            nanos,
+        } => {
+            format!("{months}mo {days}d {nanos}ns")
+        }
+        Value::List(items) => {
+            let parts: Vec<String> = items.into_iter().map(value_to_string).collect();
+            format!("[{}]", parts.join(", "))
+        }
+        Value::Enum(s) => s,
+        Value::Struct(fields) => {
+            let parts: Vec<String> = fields
+                .iter()
+                .map(|(k, v)| format!("{k}: {}", value_to_string(v.clone())))
+                .collect();
+            format!("{{{}}}", parts.join(", "))
+        }
+        Value::Array(items) => {
+            let parts: Vec<String> = items.into_iter().map(value_to_string).collect();
+            format!("[{}]", parts.join(", "))
+        }
+        Value::Map(pairs) => {
+            let parts: Vec<String> = pairs
+                .iter()
+                .map(|(k, v)| {
+                    format!(
+                        "{}: {}",
+                        value_to_string(k.clone()),
+                        value_to_string(v.clone())
+                    )
+                })
+                .collect();
+            format!("{{{}}}", parts.join(", "))
+        }
+        Value::Union(inner) => value_to_string(*inner),
+    }
 }
 
 impl Store {
@@ -129,9 +198,13 @@ impl Store {
     }
 
     pub fn interlace_staging(&self) -> Result<usize, StoreError> {
-        let mut stmt = self.conn.prepare("SELECT from_id, to_id FROM staging_edges")?;
+        let mut stmt = self
+            .conn
+            .prepare("SELECT from_id, to_id FROM staging_edges")?;
         let pairs: Vec<(String, String)> = stmt
-            .query_map([], |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)))?
+            .query_map([], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+            })?
             .collect::<Result<Vec<_>, _>>()?;
 
         if pairs.is_empty() {
@@ -227,6 +300,42 @@ impl Store {
         }
 
         Ok(g)
+    }
+
+    pub fn query(&self, sql: &str) -> Result<QueryResult, StoreError> {
+        use sqlparser::ast::Statement;
+        use sqlparser::dialect::DuckDbDialect;
+        use sqlparser::parser::Parser;
+
+        // Guard against DDL/DML that could corrupt the store.
+        // If sqlparser can parse the input and finds a non-SELECT statement, reject it.
+        // Unknown syntax (DuckDB-specific) passes through and is validated by DuckDB itself.
+        if let Ok(stmts) = Parser::parse_sql(&DuckDbDialect {}, sql) {
+            for stmt in &stmts {
+                if !matches!(stmt, Statement::Query(_)) {
+                    return Err(StoreError::QueryNotAllowed(
+                        "only SELECT statements are permitted".into(),
+                    ));
+                }
+            }
+        }
+
+        let mut stmt = self.conn.prepare(sql)?;
+        // query([]) executes the statement and populates schema metadata on Rows.
+        let mut result = stmt.query([])?;
+        let columns: Vec<String> = result
+            .as_ref()
+            .map(|s| s.column_names())
+            .unwrap_or_default();
+        let col_count = columns.len();
+        let mut rows: Vec<Vec<String>> = Vec::new();
+        while let Some(row) = result.next()? {
+            let vals: Vec<String> = (0..col_count)
+                .map(|i| value_to_string(row.get::<_, Value>(i).unwrap_or(Value::Null)))
+                .collect();
+            rows.push(vals);
+        }
+        Ok(QueryResult { columns, rows })
     }
 
     pub fn inspect(&self) -> Result<InspectReport, StoreError> {
@@ -436,6 +545,30 @@ mod tests {
         let second = store.interlace_staging().unwrap();
         assert_eq!(first, 1);
         assert_eq!(second, 0, "second call must not add duplicate edges");
+    }
+
+    #[test]
+    fn query_returns_columns_and_rows() {
+        let (store, _dir) = make_store();
+        store
+            .write_strands_to_staging(&[strand_with(
+                &[("raw.orders", "Raw"), ("stg.orders", "Staged")],
+                &[("raw.orders", "stg.orders")],
+            )])
+            .unwrap();
+        store.apply_staging().unwrap();
+
+        let result = store.query("SELECT COUNT(*) AS cnt FROM nodes").unwrap();
+        assert_eq!(result.columns, vec!["cnt"]);
+        assert_eq!(result.rows, vec![vec!["2"]]);
+    }
+
+    #[test]
+    fn query_empty_store_returns_zero_rows_with_column_name() {
+        let (store, _dir) = make_store();
+        let result = store.query("SELECT id FROM nodes").unwrap();
+        assert_eq!(result.columns, vec!["id"]);
+        assert!(result.rows.is_empty());
     }
 
     #[test]

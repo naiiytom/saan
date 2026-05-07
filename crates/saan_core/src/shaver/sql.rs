@@ -5,9 +5,9 @@ use sqlparser::ast::{
     Ident, ObjectName, Query, Select, SetExpr, Statement, TableFactor, TableWithJoins,
 };
 use sqlparser::dialect::{
-    AnsiDialect, BigQueryDialect, ClickHouseDialect, DuckDbDialect, GenericDialect,
-    HiveDialect, MsSqlDialect, MySqlDialect, PostgreSqlDialect, RedshiftSqlDialect,
-    SnowflakeDialect, SQLiteDialect,
+    AnsiDialect, BigQueryDialect, ClickHouseDialect, DuckDbDialect, GenericDialect, HiveDialect,
+    MsSqlDialect, MySqlDialect, PostgreSqlDialect, RedshiftSqlDialect, SQLiteDialect,
+    SnowflakeDialect,
 };
 use sqlparser::parser::Parser;
 
@@ -32,13 +32,37 @@ pub enum SqlDialect {
     ClickHouse,
 }
 
+impl std::str::FromStr for SqlDialect {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "generic" => Ok(SqlDialect::Generic),
+            "ansi" => Ok(SqlDialect::Ansi),
+            "postgres" => Ok(SqlDialect::Postgres),
+            "mysql" => Ok(SqlDialect::MySql),
+            "mssql" => Ok(SqlDialect::MsSql),
+            "bigquery" => Ok(SqlDialect::BigQuery),
+            "snowflake" => Ok(SqlDialect::Snowflake),
+            "hive" => Ok(SqlDialect::Hive),
+            "redshift" => Ok(SqlDialect::Redshift),
+            "sqlite" => Ok(SqlDialect::SQLite),
+            "duckdb" => Ok(SqlDialect::DuckDb),
+            "clickhouse" => Ok(SqlDialect::ClickHouse),
+            other => Err(format!("unknown dialect: {other}")),
+        }
+    }
+}
+
 pub struct SqlShaver {
     dialect: SqlDialect,
 }
 
 impl SqlShaver {
     pub fn new() -> Self {
-        Self { dialect: SqlDialect::Generic }
+        Self {
+            dialect: SqlDialect::Generic,
+        }
     }
 
     pub fn with_dialect(dialect: SqlDialect) -> Self {
@@ -75,17 +99,17 @@ impl Shaver for SqlShaver {
                 })
             };
             match &self.dialect {
-                SqlDialect::Generic    => parse(&GenericDialect {}),
-                SqlDialect::Ansi       => parse(&AnsiDialect {}),
-                SqlDialect::Postgres   => parse(&PostgreSqlDialect {}),
-                SqlDialect::MySql      => parse(&MySqlDialect {}),
-                SqlDialect::MsSql      => parse(&MsSqlDialect {}),
-                SqlDialect::BigQuery   => parse(&BigQueryDialect {}),
-                SqlDialect::Snowflake  => parse(&SnowflakeDialect {}),
-                SqlDialect::Hive       => parse(&HiveDialect {}),
-                SqlDialect::Redshift   => parse(&RedshiftSqlDialect {}),
-                SqlDialect::SQLite     => parse(&SQLiteDialect {}),
-                SqlDialect::DuckDb     => parse(&DuckDbDialect {}),
+                SqlDialect::Generic => parse(&GenericDialect {}),
+                SqlDialect::Ansi => parse(&AnsiDialect {}),
+                SqlDialect::Postgres => parse(&PostgreSqlDialect {}),
+                SqlDialect::MySql => parse(&MySqlDialect {}),
+                SqlDialect::MsSql => parse(&MsSqlDialect {}),
+                SqlDialect::BigQuery => parse(&BigQueryDialect {}),
+                SqlDialect::Snowflake => parse(&SnowflakeDialect {}),
+                SqlDialect::Hive => parse(&HiveDialect {}),
+                SqlDialect::Redshift => parse(&RedshiftSqlDialect {}),
+                SqlDialect::SQLite => parse(&SQLiteDialect {}),
+                SqlDialect::DuckDb => parse(&DuckDbDialect {}),
                 SqlDialect::ClickHouse => parse(&ClickHouseDialect {}),
             }?
         };
@@ -386,7 +410,8 @@ mod tests {
         // PostgreSQL-specific :: cast syntax — GenericDialect rejects this
         let shaver = SqlShaver::with_dialect(SqlDialect::Postgres);
         let mut f = NamedTempFile::with_suffix(".sql").unwrap();
-        f.write_all(b"CREATE TABLE t AS SELECT id::text FROM src").unwrap();
+        f.write_all(b"CREATE TABLE t AS SELECT id::text FROM src")
+            .unwrap();
         let strand = shaver.shave(f.path()).unwrap();
         assert!(strand.nodes.iter().any(|n| n.id == "t"));
     }

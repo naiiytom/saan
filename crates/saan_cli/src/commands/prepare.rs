@@ -1,5 +1,5 @@
 use anyhow::{Context as _, Result, bail};
-use saan_core::{SqlDialect, ShaverRegistry, Store};
+use saan_core::{ShaverRegistry, SqlDialect, Store};
 use std::path::Path;
 
 pub fn run(input: &Path, store_path: &Path, dialect: SqlDialect) -> Result<()> {

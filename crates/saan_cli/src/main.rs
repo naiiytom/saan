@@ -2,8 +2,9 @@ mod commands;
 
 use anyhow::Result;
 use clap::{Parser, Subcommand};
-use std::path::PathBuf;
+use commands::query::OutputFormat;
 use saan_core::SqlDialect;
+use std::path::PathBuf;
 
 #[derive(Debug, Clone, clap::ValueEnum)]
 enum CliDialect {
@@ -24,17 +25,17 @@ enum CliDialect {
 impl From<CliDialect> for SqlDialect {
     fn from(d: CliDialect) -> Self {
         match d {
-            CliDialect::Generic    => SqlDialect::Generic,
-            CliDialect::Ansi       => SqlDialect::Ansi,
-            CliDialect::Postgres   => SqlDialect::Postgres,
-            CliDialect::Mysql      => SqlDialect::MySql,
-            CliDialect::Mssql      => SqlDialect::MsSql,
-            CliDialect::Bigquery   => SqlDialect::BigQuery,
-            CliDialect::Snowflake  => SqlDialect::Snowflake,
-            CliDialect::Hive       => SqlDialect::Hive,
-            CliDialect::Redshift   => SqlDialect::Redshift,
-            CliDialect::Sqlite     => SqlDialect::SQLite,
-            CliDialect::Duckdb     => SqlDialect::DuckDb,
+            CliDialect::Generic => SqlDialect::Generic,
+            CliDialect::Ansi => SqlDialect::Ansi,
+            CliDialect::Postgres => SqlDialect::Postgres,
+            CliDialect::Mysql => SqlDialect::MySql,
+            CliDialect::Mssql => SqlDialect::MsSql,
+            CliDialect::Bigquery => SqlDialect::BigQuery,
+            CliDialect::Snowflake => SqlDialect::Snowflake,
+            CliDialect::Hive => SqlDialect::Hive,
+            CliDialect::Redshift => SqlDialect::Redshift,
+            CliDialect::Sqlite => SqlDialect::SQLite,
+            CliDialect::Duckdb => SqlDialect::DuckDb,
             CliDialect::Clickhouse => SqlDialect::ClickHouse,
         }
     }
@@ -96,6 +97,17 @@ enum Commands {
         #[arg(long, default_value = "lineage.html")]
         out: PathBuf,
     },
+    /// Run an ad-hoc SQL query against the store
+    Query {
+        /// SQL statement to execute
+        sql: String,
+        /// Path to the .saan store
+        #[arg(long, default_value = ".saan")]
+        store: PathBuf,
+        /// Output format
+        #[arg(long, value_enum, default_value = "table")]
+        format: OutputFormat,
+    },
 }
 
 fn main() -> Result<()> {
@@ -103,13 +115,16 @@ fn main() -> Result<()> {
 
     match cli.command {
         Commands::Init { path, force } => commands::init::run(&path, force)?,
-        Commands::Prepare { input, store, dialect } => {
-            commands::prepare::run(&input, &store, dialect.into())?
-        }
+        Commands::Prepare {
+            input,
+            store,
+            dialect,
+        } => commands::prepare::run(&input, &store, dialect.into())?,
         Commands::Apply { store } => commands::apply::run(&store)?,
         Commands::Interlace { store } => commands::interlace::run(&store)?,
         Commands::Inspect { store } => commands::inspect::run(&store)?,
         Commands::View { store, out } => commands::view::run(&store, &out)?,
+        Commands::Query { sql, store, format } => commands::query::run(&sql, &store, &format)?,
     }
 
     Ok(())

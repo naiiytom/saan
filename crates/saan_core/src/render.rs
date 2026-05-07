@@ -124,8 +124,8 @@ fn circular_layout(n: usize, w: f64, h: f64) -> Vec<(f64, f64)> {
             let r = (w.min(h) * 0.35).max(100.0);
             (0..n)
                 .map(|i| {
-                    let angle = std::f64::consts::TAU * i as f64 / n as f64
-                        - std::f64::consts::FRAC_PI_2;
+                    let angle =
+                        std::f64::consts::TAU * i as f64 / n as f64 - std::f64::consts::FRAC_PI_2;
                     (cx + r * angle.cos(), cy + r * angle.sin())
                 })
                 .collect()
@@ -187,6 +187,9 @@ mod tests {
         let mut g = Graph::new();
         g.add_node(Node::new("a", "A", "sql"));
         let svg = SvgRenderer::render(&g, &SvgConfig::default());
-        assert!(svg.contains("<g id=\"viewport\">"), "must have viewport group for pan/zoom");
+        assert!(
+            svg.contains("<g id=\"viewport\">"),
+            "must have viewport group for pan/zoom"
+        );
     }
 }

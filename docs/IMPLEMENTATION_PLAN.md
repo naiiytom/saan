@@ -1577,7 +1577,8 @@ Update `commands/view.rs` to embed the compiled WASM+JS bundle inline in the HTM
 
 # Implementation Plan — Phase 4 Python SDK
 
-**Status:** Pending
+**Status:** Complete
+**Branch:** `feat/phase-4-5` (PR #5)
 **Scope:** PyO3 bindings via `maturin` exposing the full `saan_core` surface as a Python package `saan_ops`.
 
 ---
@@ -1712,7 +1713,8 @@ g.has_cycle()     # bool
 
 # Implementation Plan — Phase 5 Ad-Hoc Query
 
-**Status:** Pending
+**Status:** Complete
+**Branch:** `feat/phase-4-5` (PR #5)
 **Scope:** SQL passthrough on the CLI (`saan query`) and Python SDK (`.query().to_pandas()` etc.). No new ingestion path - queries read directly from the DuckDB store that lineage writes to.
 
 ---
