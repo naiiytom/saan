@@ -18,6 +18,9 @@ pub fn run(sql: &str, store_path: &Path, format: &OutputFormat) -> Result<()> {
     }
     let store = Store::open(store_path)
         .with_context(|| format!("failed to open store at {}", store_path.display()))?;
+    store
+        .init_schema()
+        .with_context(|| "failed to initialise store schema")?;
     let result = store.query(sql)?;
 
     match format {
@@ -122,11 +125,19 @@ fn print_json(result: &QueryResult) {
 }
 
 fn json_escape(s: &str) -> String {
-    s.replace('\\', "\\\\")
-        .replace('"', "\\\"")
-        .replace('\n', "\\n")
-        .replace('\r', "\\r")
-        .replace('\t', "\\t")
+    let mut out = String::with_capacity(s.len());
+    for ch in s.chars() {
+        match ch {
+            '\\' => out.push_str("\\\\"),
+            '"' => out.push_str("\\\""),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            c if (c as u32) < 0x20 => out.push_str(&format!("\\u{:04x}", c as u32)),
+            c => out.push(c),
+        }
+    }
+    out
 }
 
 fn json_value(s: &str) -> String {

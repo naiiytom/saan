@@ -32,6 +32,28 @@ pub enum SqlDialect {
     ClickHouse,
 }
 
+impl std::str::FromStr for SqlDialect {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "generic" => Ok(SqlDialect::Generic),
+            "ansi" => Ok(SqlDialect::Ansi),
+            "postgres" => Ok(SqlDialect::Postgres),
+            "mysql" => Ok(SqlDialect::MySql),
+            "mssql" => Ok(SqlDialect::MsSql),
+            "bigquery" => Ok(SqlDialect::BigQuery),
+            "snowflake" => Ok(SqlDialect::Snowflake),
+            "hive" => Ok(SqlDialect::Hive),
+            "redshift" => Ok(SqlDialect::Redshift),
+            "sqlite" => Ok(SqlDialect::SQLite),
+            "duckdb" => Ok(SqlDialect::DuckDb),
+            "clickhouse" => Ok(SqlDialect::ClickHouse),
+            other => Err(format!("unknown dialect: {other}")),
+        }
+    }
+}
+
 pub struct SqlShaver {
     dialect: SqlDialect,
 }

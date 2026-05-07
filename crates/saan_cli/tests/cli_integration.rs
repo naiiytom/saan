@@ -308,7 +308,7 @@ fn query_returns_table_output() {
         .assert()
         .success()
         .stdout(contains("cnt"))
-        .stdout(contains("2"));
+        .stdout(contains("| 2"));
 }
 
 #[test]
@@ -347,7 +347,8 @@ fn query_csv_format() {
         .arg("csv")
         .assert()
         .success()
-        .stdout(contains("id\n"));
+        .stdout(contains("id\n"))
+        .stdout(contains("raw.orders"));
 }
 
 #[test]
@@ -387,7 +388,8 @@ fn query_json_format() {
         .assert()
         .success()
         .stdout(contains("[{"))
-        .stdout(contains("\"id\""));
+        .stdout(contains("\"id\""))
+        .stdout(contains("\"raw.orders\""));
 }
 
 #[test]

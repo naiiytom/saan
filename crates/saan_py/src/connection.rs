@@ -1,14 +1,13 @@
 use pyo3::prelude::*;
 use saan_core::{InspectReport, ShaverRegistry, SqlDialect, Store};
 use std::path::PathBuf;
+use std::str::FromStr;
 
 use crate::report::_InspectReport;
 
 #[pyclass(unsendable)]
 pub struct _SaanConnection {
     store: Store,
-    #[allow(dead_code)]
-    path: PathBuf,
 }
 
 #[pymethods]
@@ -66,25 +65,9 @@ pub fn _connect(path: &str) -> PyResult<_SaanConnection> {
     store.init_schema().map_err(|e| {
         pyo3::exceptions::PyRuntimeError::new_err(format!("schema init failed: {e}"))
     })?;
-    Ok(_SaanConnection { store, path: p })
+    Ok(_SaanConnection { store })
 }
 
 fn parse_dialect(s: &str) -> PyResult<SqlDialect> {
-    match s {
-        "generic" => Ok(SqlDialect::Generic),
-        "ansi" => Ok(SqlDialect::Ansi),
-        "postgres" => Ok(SqlDialect::Postgres),
-        "mysql" => Ok(SqlDialect::MySql),
-        "mssql" => Ok(SqlDialect::MsSql),
-        "bigquery" => Ok(SqlDialect::BigQuery),
-        "snowflake" => Ok(SqlDialect::Snowflake),
-        "hive" => Ok(SqlDialect::Hive),
-        "redshift" => Ok(SqlDialect::Redshift),
-        "sqlite" => Ok(SqlDialect::SQLite),
-        "duckdb" => Ok(SqlDialect::DuckDb),
-        "clickhouse" => Ok(SqlDialect::ClickHouse),
-        other => Err(pyo3::exceptions::PyValueError::new_err(format!(
-            "unknown dialect: {other}"
-        ))),
-    }
+    SqlDialect::from_str(s).map_err(pyo3::exceptions::PyValueError::new_err)
 }

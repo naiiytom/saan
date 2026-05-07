@@ -69,9 +69,15 @@ df = conn.query("SELECT * FROM nodes").to_pandas()
 ```powershell
 cd sdk/python
 uv venv .venv
-maturin develop --uv         # builds Rust extension + installs into .venv
+maturin develop --uv   # builds Rust extension + installs into .venv
+
+# Windows
 uv pip install --python .venv/Scripts/python.exe pytest
 .venv/Scripts/python -m pytest tests/
+
+# Linux / macOS
+uv pip install --python .venv/bin/python pytest
+.venv/bin/python -m pytest tests/
 ```
 
 ## Building on Windows

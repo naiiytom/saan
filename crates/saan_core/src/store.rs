@@ -12,6 +12,8 @@ use crate::strand::Strand;
 pub enum StoreError {
     #[error("database error: {0}")]
     Db(#[from] duckdb::Error),
+    #[error("{0}")]
+    QueryNotAllowed(String),
 }
 
 pub struct QueryResult {
@@ -34,7 +36,7 @@ pub struct Store {
 
 fn value_to_string(v: Value) -> String {
     match v {
-        Value::Null => String::new(),
+        Value::Null => "NULL".to_string(),
         Value::Boolean(b) => b.to_string(),
         Value::TinyInt(n) => n.to_string(),
         Value::SmallInt(n) => n.to_string(),
@@ -301,6 +303,23 @@ impl Store {
     }
 
     pub fn query(&self, sql: &str) -> Result<QueryResult, StoreError> {
+        use sqlparser::ast::Statement;
+        use sqlparser::dialect::GenericDialect;
+        use sqlparser::parser::Parser;
+
+        // Guard against DDL/DML that could corrupt the store.
+        // If sqlparser can parse the input and finds a non-SELECT statement, reject it.
+        // Unknown syntax (DuckDB-specific) passes through and is validated by DuckDB itself.
+        if let Ok(stmts) = Parser::parse_sql(&GenericDialect {}, sql) {
+            for stmt in &stmts {
+                if !matches!(stmt, Statement::Query(_)) {
+                    return Err(StoreError::QueryNotAllowed(
+                        "only SELECT statements are permitted".into(),
+                    ));
+                }
+            }
+        }
+
         let mut stmt = self.conn.prepare(sql)?;
         // query([]) executes the statement and populates schema metadata on Rows.
         let mut result = stmt.query([])?;
