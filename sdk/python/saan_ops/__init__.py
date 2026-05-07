@@ -63,16 +63,34 @@ class QueryResult:
         return self._inner.rows
 
     def to_pandas(self) -> "pandas.DataFrame":
-        import pandas as pd
+        try:
+            import pandas as pd
+        except ImportError:
+            raise ImportError(
+                "pandas is required for to_pandas(). "
+                "Install it with 'pip install saan-ops[pandas]'."
+            ) from None
         return pd.DataFrame(self.rows, columns=self.columns)
 
     def to_polars(self) -> "polars.DataFrame":
-        import polars as pl
+        try:
+            import polars as pl
+        except ImportError:
+            raise ImportError(
+                "polars is required for to_polars(). "
+                "Install it with 'pip install saan-ops[polars]'."
+            ) from None
         data = {col: [row[i] for row in self.rows] for i, col in enumerate(self.columns)}
         return pl.DataFrame(data)
 
     def to_arrow(self) -> "pyarrow.Table":
-        import pyarrow as pa
+        try:
+            import pyarrow as pa
+        except ImportError:
+            raise ImportError(
+                "pyarrow is required for to_arrow(). "
+                "Install it with 'pip install saan-ops[arrow]'."
+            ) from None
         data = {col: [row[i] for row in self.rows] for i, col in enumerate(self.columns)}
         return pa.table(data)
 

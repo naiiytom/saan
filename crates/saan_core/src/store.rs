@@ -304,13 +304,13 @@ impl Store {
 
     pub fn query(&self, sql: &str) -> Result<QueryResult, StoreError> {
         use sqlparser::ast::Statement;
-        use sqlparser::dialect::GenericDialect;
+        use sqlparser::dialect::DuckDbDialect;
         use sqlparser::parser::Parser;
 
         // Guard against DDL/DML that could corrupt the store.
         // If sqlparser can parse the input and finds a non-SELECT statement, reject it.
         // Unknown syntax (DuckDB-specific) passes through and is validated by DuckDB itself.
-        if let Ok(stmts) = Parser::parse_sql(&GenericDialect {}, sql) {
+        if let Ok(stmts) = Parser::parse_sql(&DuckDbDialect {}, sql) {
             for stmt in &stmts {
                 if !matches!(stmt, Statement::Query(_)) {
                     return Err(StoreError::QueryNotAllowed(

@@ -94,7 +94,7 @@ fn csv_row(fields: &[String]) -> String {
     fields
         .iter()
         .map(|f| {
-            if f.contains(',') || f.contains('"') || f.contains('\n') {
+            if f.contains(',') || f.contains('"') || f.contains('\n') || f.contains('\r') {
                 format!("\"{}\"", f.replace('"', "\"\""))
             } else {
                 f.clone()
