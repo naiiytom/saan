@@ -277,4 +277,85 @@ mod tests {
         assert!(svg.contains("<svg"));
         assert!(svg.contains("Empty graph"));
     }
+
+    #[test]
+    fn render_graph_show_labels_false_omits_text_elements() {
+        let config = "{\"show_labels\":false}";
+        let svg = render_graph(
+            r#"[{"id":"a","label":"Alpha"}]"#,
+            "[]",
+            config,
+        );
+        assert!(svg.contains("<circle"), "circle must still be present");
+        assert!(
+            !svg.contains(">Alpha<"),
+            "label text must be absent when show_labels is false"
+        );
+    }
+
+    #[test]
+    fn render_graph_show_labels_true_includes_text_elements() {
+        let config = "{\"show_labels\":true}";
+        let svg = render_graph(
+            r#"[{"id":"a","label":"Alpha"}]"#,
+            "[]",
+            config,
+        );
+        assert!(svg.contains(">Alpha<"), "label text must appear");
+    }
+
+    #[test]
+    fn parse_config_partial_json_uses_defaults_for_missing_fields() {
+        // Only override width; everything else should fall back to defaults.
+        let cfg = parse_config("{\"width\":800}");
+        assert_eq!(cfg.width, 800, "overridden field must be applied");
+        assert_eq!(
+            cfg.height,
+            RenderConfig::default().height,
+            "missing height must use default"
+        );
+        assert_eq!(
+            cfg.show_labels,
+            RenderConfig::default().show_labels,
+            "missing show_labels must use default"
+        );
+    }
+
+    #[test]
+    fn parse_config_empty_string_returns_defaults() {
+        let cfg = parse_config("");
+        assert_eq!(cfg, RenderConfig::default());
+    }
+
+    #[test]
+    fn parse_config_invalid_json_returns_defaults() {
+        let cfg = parse_config("not json at all");
+        assert_eq!(cfg, RenderConfig::default());
+    }
+
+    #[test]
+    fn render_graph_edge_with_unknown_node_id_is_skipped() {
+        // Only node "a" exists; edge references missing node "z".
+        let svg = render_graph(
+            r#"[{"id":"a","label":"A"}]"#,
+            r#"[{"from_id":"a","to_id":"z"}]"#,
+            "",
+        );
+        assert!(!svg.contains("<line"), "line for missing endpoint must not appear");
+    }
+
+    #[test]
+    fn render_graph_custom_background_color_appears_in_svg() {
+        let config = "{\"background_color\":\"#ff0000\"}";
+        let svg = render_graph("[]", "[]", config);
+        assert!(svg.contains("#ff0000"), "custom background must appear in SVG");
+    }
+
+    #[test]
+    fn render_graph_custom_dimensions_appear_in_svg() {
+        let config = "{\"width\":400,\"height\":300}";
+        let svg = render_graph("[]", "[]", config);
+        assert!(svg.contains("width=\"400\""), "custom width must appear");
+        assert!(svg.contains("height=\"300\""), "custom height must appear");
+    }
 }

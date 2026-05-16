@@ -192,4 +192,55 @@ mod tests {
             "must have viewport group for pan/zoom"
         );
     }
+
+    #[test]
+    fn custom_dimensions_appear_in_svg() {
+        let cfg = SvgConfig {
+            width: 800,
+            height: 600,
+            background: "#000000".to_string(),
+        };
+        let g = Graph::new();
+        let svg = SvgRenderer::render(&g, &cfg);
+        assert!(svg.contains("width=\"800\""), "custom width must appear");
+        assert!(svg.contains("height=\"600\""), "custom height must appear");
+    }
+
+    #[test]
+    fn custom_background_appears_in_svg() {
+        let cfg = SvgConfig {
+            width: 1280,
+            height: 720,
+            background: "#ff0000".to_string(),
+        };
+        let g = Graph::new();
+        let svg = SvgRenderer::render(&g, &cfg);
+        assert!(svg.contains("#ff0000"), "custom background must appear in SVG");
+    }
+
+    #[test]
+    fn single_node_placed_at_center() {
+        let cfg = SvgConfig {
+            width: 1000,
+            height: 500,
+            background: "#000".to_string(),
+        };
+        let mut g = Graph::new();
+        g.add_node(Node::new("a", "A", "sql"));
+        let svg = SvgRenderer::render(&g, &cfg);
+        // For n=1, circular_layout returns (w/2, h/2) = (500.0, 250.0)
+        assert!(svg.contains("cx=\"500.0\""), "single node must be horizontally centered");
+        assert!(svg.contains("cy=\"250.0\""), "single node must be vertically centered");
+    }
+
+    #[test]
+    fn multiple_nodes_produce_distinct_positions() {
+        let mut g = Graph::new();
+        for i in 0..4 {
+            g.add_node(Node::new(format!("n{i}"), format!("N{i}"), "sql"));
+        }
+        let svg = SvgRenderer::render(&g, &SvgConfig::default());
+        // All four circles must exist; cheap proxy: four <circle elements
+        assert_eq!(svg.matches("<circle").count(), 4);
+    }
 }

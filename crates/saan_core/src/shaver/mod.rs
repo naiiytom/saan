@@ -91,3 +91,131 @@ impl Default for ShaverRegistry {
         Self::new()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::Arc;
+    use tempfile::tempdir;
+
+    struct DummyShaver;
+
+    impl Shaver for DummyShaver {
+        fn name(&self) -> &str {
+            "dummy"
+        }
+        fn extensions(&self) -> &[&str] {
+            &["dummy"]
+        }
+        fn shave(&self, input: &Path) -> Result<Strand, ShaverError> {
+            Ok(Strand::new(input.to_path_buf()))
+        }
+    }
+
+    #[test]
+    fn register_and_lookup_by_extension() {
+        let mut r = ShaverRegistry::new();
+        r.register(Arc::new(DummyShaver));
+        assert!(r.for_extension("dummy").is_some());
+        assert!(r.for_extension("sql").is_none());
+    }
+
+    #[test]
+    fn with_builtins_registers_sql_extension() {
+        let r = ShaverRegistry::with_builtins();
+        assert!(r.for_extension("sql").is_some());
+    }
+
+    #[test]
+    fn unregistered_extension_returns_none() {
+        let r = ShaverRegistry::new();
+        assert!(r.for_extension("py").is_none());
+    }
+
+    #[test]
+    fn shave_path_empty_directory_returns_empty_vec() {
+        let dir = tempdir().unwrap();
+        let r = ShaverRegistry::with_builtins();
+        let strands = r.shave_path(dir.path()).unwrap();
+        assert!(strands.is_empty());
+    }
+
+    #[test]
+    fn shave_path_skips_unrecognised_extensions() {
+        let dir = tempdir().unwrap();
+        std::fs::write(dir.path().join("readme.md"), "# hello").unwrap();
+        std::fs::write(dir.path().join("config.yaml"), "key: val").unwrap();
+        let r = ShaverRegistry::with_builtins();
+        let strands = r.shave_path(dir.path()).unwrap();
+        assert!(strands.is_empty());
+    }
+
+    #[test]
+    fn shave_path_processes_matching_file_at_root() {
+        let dir = tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("pipeline.sql"),
+            "CREATE TABLE b AS SELECT * FROM a;",
+        )
+        .unwrap();
+        let r = ShaverRegistry::with_builtins();
+        let strands = r.shave_path(dir.path()).unwrap();
+        assert_eq!(strands.len(), 1);
+        assert_eq!(strands[0].nodes.len(), 2);
+    }
+
+    #[test]
+    fn shave_path_recurses_into_subdirectories() {
+        let dir = tempdir().unwrap();
+        let sub = dir.path().join("models").join("staging");
+        std::fs::create_dir_all(&sub).unwrap();
+        std::fs::write(
+            sub.join("orders.sql"),
+            "CREATE TABLE stg.orders AS SELECT * FROM raw.orders;",
+        )
+        .unwrap();
+        let r = ShaverRegistry::with_builtins();
+        let strands = r.shave_path(dir.path()).unwrap();
+        assert_eq!(strands.len(), 1);
+    }
+
+    #[test]
+    fn shave_path_processes_multiple_sql_files() {
+        let dir = tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("a.sql"),
+            "CREATE TABLE stg.a AS SELECT * FROM raw.a;",
+        )
+        .unwrap();
+        std::fs::write(
+            dir.path().join("b.sql"),
+            "CREATE TABLE stg.b AS SELECT * FROM raw.b;",
+        )
+        .unwrap();
+        let r = ShaverRegistry::with_builtins();
+        let strands = r.shave_path(dir.path()).unwrap();
+        assert_eq!(strands.len(), 2);
+    }
+
+    #[test]
+    fn shave_path_mixes_sql_and_ignored_files() {
+        let dir = tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("pipeline.sql"),
+            "CREATE TABLE b AS SELECT * FROM a;",
+        )
+        .unwrap();
+        std::fs::write(dir.path().join("notes.txt"), "some notes").unwrap();
+        let r = ShaverRegistry::with_builtins();
+        let strands = r.shave_path(dir.path()).unwrap();
+        assert_eq!(strands.len(), 1, "only the .sql file should be shaved");
+    }
+
+    #[test]
+    fn with_sql_dialect_replaces_default_sql_shaver() {
+        use crate::shaver::sql::SqlDialect;
+        let r = ShaverRegistry::with_builtins().with_sql_dialect(SqlDialect::Postgres);
+        let shaver = r.for_extension("sql").expect("sql must be registered");
+        assert_eq!(shaver.name(), "sql");
+    }
+}

@@ -406,6 +406,42 @@ mod tests {
     }
 
     #[test]
+    fn sql_dialect_from_str_all_known_variants() {
+        let cases = [
+            ("generic", "Generic"),
+            ("ansi", "Ansi"),
+            ("postgres", "Postgres"),
+            ("mysql", "MySql"),
+            ("mssql", "MsSql"),
+            ("bigquery", "BigQuery"),
+            ("snowflake", "Snowflake"),
+            ("hive", "Hive"),
+            ("redshift", "Redshift"),
+            ("sqlite", "SQLite"),
+            ("duckdb", "DuckDb"),
+            ("clickhouse", "ClickHouse"),
+        ];
+        for (input, expected_debug) in cases {
+            let dialect: SqlDialect = input.parse().unwrap_or_else(|e| {
+                panic!("failed to parse dialect '{input}': {e}")
+            });
+            let debug = format!("{dialect:?}");
+            assert!(
+                debug.contains(expected_debug),
+                "dialect '{input}' produced unexpected debug repr: {debug}"
+            );
+        }
+    }
+
+    #[test]
+    fn sql_dialect_from_str_unknown_returns_err() {
+        let result: Result<SqlDialect, _> = "oracle".parse();
+        assert!(result.is_err());
+        let msg = result.unwrap_err();
+        assert!(msg.contains("oracle"), "error should mention the bad input");
+    }
+
+    #[test]
     fn postgres_dialect_parses_double_colon_cast() {
         // PostgreSQL-specific :: cast syntax — GenericDialect rejects this
         let shaver = SqlShaver::with_dialect(SqlDialect::Postgres);
