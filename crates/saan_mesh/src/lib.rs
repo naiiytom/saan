@@ -78,6 +78,17 @@ struct ConfigData {
     background_color: Option<String>,
 }
 
+fn sanitize_css_color(s: &str) -> Option<&str> {
+    let s = s.trim();
+    if s.starts_with('#') {
+        let hex = &s[1..];
+        if (3..=8).contains(&hex.len()) && hex.chars().all(|c| c.is_ascii_hexdigit()) {
+            return Some(s);
+        }
+    }
+    None
+}
+
 fn parse_config(json: &str) -> RenderConfig {
     let data: ConfigData = serde_json::from_str(json).unwrap_or_default();
     let defaults = RenderConfig::default();
@@ -85,7 +96,12 @@ fn parse_config(json: &str) -> RenderConfig {
         width: data.width.unwrap_or(defaults.width),
         height: data.height.unwrap_or(defaults.height),
         show_labels: data.show_labels.unwrap_or(defaults.show_labels),
-        background_color: data.background_color.unwrap_or(defaults.background_color),
+        background_color: data
+            .background_color
+            .as_deref()
+            .and_then(sanitize_css_color)
+            .map(str::to_owned)
+            .unwrap_or(defaults.background_color),
     }
 }
 
@@ -357,5 +373,42 @@ mod tests {
         let svg = render_graph("[]", "[]", config);
         assert!(svg.contains("width=\"400\""), "custom width must appear");
         assert!(svg.contains("height=\"300\""), "custom height must appear");
+    }
+
+    #[test]
+    fn sanitize_css_color_accepts_three_digit_hex() {
+        assert_eq!(sanitize_css_color("#abc"), Some("#abc"));
+    }
+
+    #[test]
+    fn sanitize_css_color_accepts_six_digit_hex() {
+        assert_eq!(sanitize_css_color("#1a2b3c"), Some("#1a2b3c"));
+    }
+
+    #[test]
+    fn sanitize_css_color_rejects_injection_attempt() {
+        let malicious = "red\"></svg><script>alert(1)</script>";
+        assert!(sanitize_css_color(malicious).is_none());
+    }
+
+    #[test]
+    fn sanitize_css_color_rejects_css_without_hash() {
+        assert!(sanitize_css_color("red").is_none());
+        assert!(sanitize_css_color("rgb(255,0,0)").is_none());
+    }
+
+    #[test]
+    fn parse_config_malicious_background_color_falls_back_to_default() {
+        let cfg = parse_config(r#"{"background_color":"red\"><script>alert(1)</script>"}"#);
+        assert_eq!(cfg.background_color, RenderConfig::default().background_color);
+        assert!(!cfg.background_color.contains('<'));
+    }
+
+    #[test]
+    fn render_graph_malicious_background_color_not_in_output() {
+        let config = r#"{"background_color":"red\"></svg><script>alert(1)</script>"}"#;
+        let svg = render_graph("[]", "[]", config);
+        assert!(!svg.contains("<script>"), "injected script must not appear");
+        assert!(svg.contains("background:#1a1a2e"), "must fall back to default color");
     }
 }

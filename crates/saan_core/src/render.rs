@@ -39,9 +39,10 @@ impl SvgRenderer {
 
         let mut svg = String::new();
 
+        let background = sanitize_css_color(&config.background).unwrap_or("#1a1a2e");
         svg.push_str(&format!(
             "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"{}\" height=\"{}\" style=\"background:{};\">",
-            config.width, config.height, config.background
+            config.width, config.height, background
         ));
 
         svg.push_str(
@@ -138,6 +139,17 @@ fn escape_xml(s: &str) -> String {
         .replace('<', "&lt;")
         .replace('>', "&gt;")
         .replace('"', "&quot;")
+}
+
+fn sanitize_css_color(s: &str) -> Option<&str> {
+    let s = s.trim();
+    if s.starts_with('#') {
+        let hex = &s[1..];
+        if (3..=8).contains(&hex.len()) && hex.chars().all(|c| c.is_ascii_hexdigit()) {
+            return Some(s);
+        }
+    }
+    None
 }
 
 #[cfg(test)]
@@ -242,5 +254,30 @@ mod tests {
         let svg = SvgRenderer::render(&g, &SvgConfig::default());
         // All four circles must exist; cheap proxy: four <circle elements
         assert_eq!(svg.matches("<circle").count(), 4);
+    }
+
+    #[test]
+    fn sanitize_css_color_accepts_valid_hex() {
+        assert_eq!(sanitize_css_color("#1a1a2e"), Some("#1a1a2e"));
+        assert_eq!(sanitize_css_color("#fff"), Some("#fff"));
+    }
+
+    #[test]
+    fn sanitize_css_color_rejects_injection() {
+        assert!(sanitize_css_color("red\"></svg><script>alert(1)</script>").is_none());
+        assert!(sanitize_css_color("rgb(0,0,0)").is_none());
+    }
+
+    #[test]
+    fn malicious_background_falls_back_to_default() {
+        let cfg = SvgConfig {
+            width: 100,
+            height: 100,
+            background: "red\"></svg><script>alert(1)</script>".to_string(),
+        };
+        let g = crate::graph::Graph::new();
+        let svg = SvgRenderer::render(&g, &cfg);
+        assert!(!svg.contains("<script>"), "injected script must not appear");
+        assert!(svg.contains("background:#1a1a2e"), "must fall back to default");
     }
 }
