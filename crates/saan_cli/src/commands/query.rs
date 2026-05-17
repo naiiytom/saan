@@ -170,15 +170,19 @@ mod tests {
     #[test]
     fn csv_row_value_with_newline_is_quoted() {
         let row = vec!["line1\nline2".to_string()];
-        let out = csv_row(&row);
-        assert!(out.starts_with('"') && out.ends_with('"'));
+        assert_eq!(csv_row(&row), "\"line1\nline2\"");
     }
 
     #[test]
     fn csv_row_value_with_carriage_return_is_quoted() {
         let row = vec!["line1\rline2".to_string()];
-        let out = csv_row(&row);
-        assert!(out.starts_with('"') && out.ends_with('"'));
+        assert_eq!(csv_row(&row), "\"line1\rline2\"");
+    }
+
+    #[test]
+    fn csv_row_mixed_plain_and_quoted_values() {
+        let row = vec!["plain".to_string(), "with,comma".to_string(), "also plain".to_string()];
+        assert_eq!(csv_row(&row), "plain,\"with,comma\",also plain");
     }
 
     #[test]

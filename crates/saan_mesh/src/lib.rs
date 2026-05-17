@@ -288,7 +288,7 @@ mod tests {
         );
         assert!(svg.contains("<circle"), "circle must still be present");
         assert!(
-            !svg.contains(">Alpha<"),
+            !svg.contains(">Alpha</text>"),
             "label text must be absent when show_labels is false"
         );
     }
@@ -301,7 +301,7 @@ mod tests {
             "[]",
             config,
         );
-        assert!(svg.contains(">Alpha<"), "label text must appear");
+        assert!(svg.contains(">Alpha</text>"), "label text must appear");
     }
 
     #[test]

@@ -214,8 +214,33 @@ mod tests {
     #[test]
     fn with_sql_dialect_replaces_default_sql_shaver() {
         use crate::shaver::sql::SqlDialect;
-        let r = ShaverRegistry::with_builtins().with_sql_dialect(SqlDialect::Postgres);
-        let shaver = r.for_extension("sql").expect("sql must be registered");
-        assert_eq!(shaver.name(), "sql");
+        let dir = tempdir().unwrap();
+        // A query using PostgreSQL :: cast syntax
+        std::fs::write(
+            dir.path().join("cast.sql"),
+            "CREATE TABLE t AS SELECT id::text FROM src",
+        )
+        .unwrap();
+
+        let postgres = ShaverRegistry::with_builtins().with_sql_dialect(SqlDialect::Postgres);
+        let strands = postgres.shave_path(dir.path()).unwrap();
+        assert_eq!(strands.len(), 1, "postgres dialect must parse :: cast file");
+        assert!(
+            strands[0].nodes.iter().any(|n| n.id == "t"),
+            "postgres dialect must produce node 't' from :: cast query"
+        );
+        // Verify the registered shaver is still named "sql"
+        assert_eq!(
+            postgres.for_extension("sql").expect("sql must be registered").name(),
+            "sql"
+        );
+    }
+
+    #[test]
+    fn shave_path_nonexistent_directory_returns_error() {
+        let dir = tempdir().unwrap();
+        let missing = dir.path().join("does_not_exist");
+        let r = ShaverRegistry::with_builtins();
+        assert!(r.shave_path(&missing).is_err());
     }
 }

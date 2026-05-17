@@ -687,6 +687,60 @@ mod tests {
     }
 
     #[test]
+    fn value_to_string_huge_int() {
+        assert_eq!(
+            value_to_string(Value::HugeInt(123_456_789_012_345_678_901_234_567_890i128)),
+            "123456789012345678901234567890"
+        );
+    }
+
+    #[test]
+    fn value_to_string_date32() {
+        assert_eq!(value_to_string(Value::Date32(0)), "0");
+        assert_eq!(value_to_string(Value::Date32(19_000)), "19000");
+    }
+
+    #[test]
+    fn value_to_string_time64() {
+        use duckdb::types::TimeUnit;
+        assert_eq!(value_to_string(Value::Time64(TimeUnit::Microsecond, 1_000_000)), "1000000");
+    }
+
+    #[test]
+    fn value_to_string_timestamp() {
+        use duckdb::types::TimeUnit;
+        assert_eq!(value_to_string(Value::Timestamp(TimeUnit::Microsecond, 0)), "0");
+    }
+
+    #[test]
+    fn value_to_string_interval() {
+        assert_eq!(
+            value_to_string(Value::Interval { months: 1, days: 2, nanos: 300 }),
+            "1mo 2d 300ns"
+        );
+    }
+
+    #[test]
+    fn value_to_string_struct() {
+        use duckdb::types::OrderedMap;
+        let fields = OrderedMap::from(vec![("x".to_string(), Value::Int(1))]);
+        assert_eq!(value_to_string(Value::Struct(fields)), "{x: 1}");
+    }
+
+    #[test]
+    fn value_to_string_array() {
+        let items = vec![Value::Int(10), Value::Int(20)];
+        assert_eq!(value_to_string(Value::Array(items)), "[10, 20]");
+    }
+
+    #[test]
+    fn value_to_string_map() {
+        use duckdb::types::OrderedMap;
+        let pairs = OrderedMap::from(vec![(Value::Text("key".into()), Value::Int(42))]);
+        assert_eq!(value_to_string(Value::Map(pairs)), "{key: 42}");
+    }
+
+    #[test]
     fn inspect_clean_graph_has_no_issues() {
         let (store, _dir) = make_store();
         store
