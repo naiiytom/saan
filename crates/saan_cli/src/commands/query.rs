@@ -144,3 +144,91 @@ fn json_value(s: &str) -> String {
     // Emit as JSON string for all values (keeps types predictable without a schema).
     format!("\"{}\"", json_escape(s))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn csv_row_plain_values_joined_with_comma() {
+        let row = vec!["a".to_string(), "b".to_string(), "c".to_string()];
+        assert_eq!(csv_row(&row), "a,b,c");
+    }
+
+    #[test]
+    fn csv_row_value_with_comma_is_quoted() {
+        let row = vec!["hello, world".to_string()];
+        assert_eq!(csv_row(&row), "\"hello, world\"");
+    }
+
+    #[test]
+    fn csv_row_value_with_double_quote_is_escaped_and_quoted() {
+        let row = vec!["say \"hi\"".to_string()];
+        assert_eq!(csv_row(&row), "\"say \"\"hi\"\"\"");
+    }
+
+    #[test]
+    fn csv_row_value_with_newline_is_quoted() {
+        let row = vec!["line1\nline2".to_string()];
+        assert_eq!(csv_row(&row), "\"line1\nline2\"");
+    }
+
+    #[test]
+    fn csv_row_value_with_carriage_return_is_quoted() {
+        let row = vec!["line1\rline2".to_string()];
+        assert_eq!(csv_row(&row), "\"line1\rline2\"");
+    }
+
+    #[test]
+    fn csv_row_mixed_plain_and_quoted_values() {
+        let row = vec!["plain".to_string(), "with,comma".to_string(), "also plain".to_string()];
+        assert_eq!(csv_row(&row), "plain,\"with,comma\",also plain");
+    }
+
+    #[test]
+    fn csv_row_empty_slice_produces_empty_string() {
+        assert_eq!(csv_row(&[]), "");
+    }
+
+    #[test]
+    fn json_escape_plain_string_is_unchanged() {
+        assert_eq!(json_escape("hello"), "hello");
+    }
+
+    #[test]
+    fn json_escape_backslash_is_doubled() {
+        assert_eq!(json_escape("a\\b"), "a\\\\b");
+    }
+
+    #[test]
+    fn json_escape_double_quote_is_escaped() {
+        assert_eq!(json_escape("say \"hi\""), "say \\\"hi\\\"");
+    }
+
+    #[test]
+    fn json_escape_newline_and_tab() {
+        assert_eq!(json_escape("a\nb\tc"), "a\\nb\\tc");
+    }
+
+    #[test]
+    fn json_escape_carriage_return() {
+        assert_eq!(json_escape("a\rb"), "a\\rb");
+    }
+
+    #[test]
+    fn json_escape_control_char_uses_unicode_escape() {
+        // ASCII 0x01 is a control character
+        let out = json_escape("\x01");
+        assert_eq!(out, "\\u0001");
+    }
+
+    #[test]
+    fn json_value_wraps_in_double_quotes() {
+        assert_eq!(json_value("foo"), "\"foo\"");
+    }
+
+    #[test]
+    fn json_value_escapes_inner_quotes() {
+        assert_eq!(json_value("say \"hi\""), "\"say \\\"hi\\\"\"");
+    }
+}

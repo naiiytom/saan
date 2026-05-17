@@ -408,6 +408,66 @@ fn query_missing_store_exits_nonzero() {
 }
 
 #[test]
+fn inspect_missing_store_exits_nonzero() {
+    let dir = tempdir().unwrap();
+    let store_path = dir.path().join(".saan");
+    saan()
+        .arg("inspect")
+        .arg("--store")
+        .arg(&store_path)
+        .assert()
+        .failure()
+        .stderr(contains("store not found"));
+}
+
+#[test]
+fn inspect_reports_orphan_nodes() {
+    let dir = tempdir().unwrap();
+    let store_path = dir.path().join(".saan");
+    // bare SELECT creates a source node with no edges → orphan
+    std::fs::write(dir.path().join("q.sql"), b"SELECT * FROM standalone_table;").unwrap();
+
+    saan().arg("init").arg(dir.path()).assert().success();
+    saan()
+        .arg("prepare")
+        .arg(dir.path())
+        .arg("--store")
+        .arg(&store_path)
+        .assert()
+        .success();
+    saan()
+        .arg("apply")
+        .arg("--store")
+        .arg(&store_path)
+        .assert()
+        .success();
+
+    saan()
+        .arg("inspect")
+        .arg("--store")
+        .arg(&store_path)
+        .assert()
+        .success()
+        .stdout(contains("Orphan nodes"));
+}
+
+#[test]
+fn query_rejects_non_select_statement() {
+    let dir = tempdir().unwrap();
+    let store_path = dir.path().join(".saan");
+    saan().arg("init").arg(dir.path()).assert().success();
+
+    saan()
+        .arg("query")
+        .arg("DROP TABLE nodes")
+        .arg("--store")
+        .arg(&store_path)
+        .assert()
+        .failure()
+        .stderr(contains("SELECT"));
+}
+
+#[test]
 fn prepare_with_postgres_dialect_parses_cast_syntax() {
     let dir = tempdir().unwrap();
     let store_path = dir.path().join(".saan");

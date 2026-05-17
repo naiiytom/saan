@@ -16,6 +16,7 @@ pub enum StoreError {
     QueryNotAllowed(String),
 }
 
+#[derive(Debug)]
 pub struct QueryResult {
     pub columns: Vec<String>,
     pub rows: Vec<Vec<String>>,
@@ -569,6 +570,174 @@ mod tests {
         let result = store.query("SELECT id FROM nodes").unwrap();
         assert_eq!(result.columns, vec!["id"]);
         assert!(result.rows.is_empty());
+    }
+
+    #[test]
+    fn query_rejects_insert_statement() {
+        let (store, _dir) = make_store();
+        let err = store
+            .query("INSERT INTO nodes VALUES ('x','x','sql', now(), now())")
+            .unwrap_err();
+        assert!(
+            matches!(err, StoreError::QueryNotAllowed(_)),
+            "INSERT must be rejected"
+        );
+    }
+
+    #[test]
+    fn query_rejects_update_statement() {
+        let (store, _dir) = make_store();
+        let err = store
+            .query("UPDATE nodes SET label = 'x' WHERE id = 'y'")
+            .unwrap_err();
+        assert!(matches!(err, StoreError::QueryNotAllowed(_)));
+    }
+
+    #[test]
+    fn query_rejects_delete_statement() {
+        let (store, _dir) = make_store();
+        let err = store.query("DELETE FROM nodes").unwrap_err();
+        assert!(matches!(err, StoreError::QueryNotAllowed(_)));
+    }
+
+    #[test]
+    fn query_rejects_drop_table() {
+        let (store, _dir) = make_store();
+        let err = store.query("DROP TABLE nodes").unwrap_err();
+        assert!(matches!(err, StoreError::QueryNotAllowed(_)));
+    }
+
+    #[test]
+    fn query_rejects_create_table() {
+        let (store, _dir) = make_store();
+        let err = store
+            .query("CREATE TABLE hacked (id TEXT)")
+            .unwrap_err();
+        assert!(matches!(err, StoreError::QueryNotAllowed(_)));
+    }
+
+    #[test]
+    fn query_not_allowed_error_message() {
+        let (store, _dir) = make_store();
+        let err = store.query("DROP TABLE nodes").unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains("SELECT"),
+            "error message should mention SELECT, got: {msg}"
+        );
+    }
+
+    #[test]
+    fn value_to_string_null() {
+        assert_eq!(value_to_string(Value::Null), "NULL");
+    }
+
+    #[test]
+    fn value_to_string_boolean() {
+        assert_eq!(value_to_string(Value::Boolean(true)), "true");
+        assert_eq!(value_to_string(Value::Boolean(false)), "false");
+    }
+
+    #[test]
+    fn value_to_string_integers() {
+        assert_eq!(value_to_string(Value::TinyInt(1)), "1");
+        assert_eq!(value_to_string(Value::SmallInt(2)), "2");
+        assert_eq!(value_to_string(Value::Int(3)), "3");
+        assert_eq!(value_to_string(Value::BigInt(4)), "4");
+        assert_eq!(value_to_string(Value::UTinyInt(5)), "5");
+        assert_eq!(value_to_string(Value::USmallInt(6)), "6");
+        assert_eq!(value_to_string(Value::UInt(7)), "7");
+        assert_eq!(value_to_string(Value::UBigInt(8)), "8");
+    }
+
+    #[test]
+    fn value_to_string_floats() {
+        assert_eq!(value_to_string(Value::Float(1.5)), "1.5");
+        assert_eq!(value_to_string(Value::Double(2.5)), "2.5");
+    }
+
+    #[test]
+    fn value_to_string_text() {
+        assert_eq!(value_to_string(Value::Text("hello".into())), "hello");
+    }
+
+    #[test]
+    fn value_to_string_blob() {
+        assert_eq!(
+            value_to_string(Value::Blob(vec![1, 2, 3])),
+            "<blob 3 bytes>"
+        );
+    }
+
+    #[test]
+    fn value_to_string_list() {
+        let items = vec![Value::Text("a".into()), Value::Text("b".into())];
+        assert_eq!(value_to_string(Value::List(items)), "[a, b]");
+    }
+
+    #[test]
+    fn value_to_string_enum() {
+        assert_eq!(value_to_string(Value::Enum("active".into())), "active");
+    }
+
+    #[test]
+    fn value_to_string_union_unwraps_inner() {
+        let inner = Box::new(Value::Text("wrapped".into()));
+        assert_eq!(value_to_string(Value::Union(inner)), "wrapped");
+    }
+
+    #[test]
+    fn value_to_string_huge_int() {
+        assert_eq!(
+            value_to_string(Value::HugeInt(123_456_789_012_345_678_901_234_567_890i128)),
+            "123456789012345678901234567890"
+        );
+    }
+
+    #[test]
+    fn value_to_string_date32() {
+        assert_eq!(value_to_string(Value::Date32(0)), "0");
+        assert_eq!(value_to_string(Value::Date32(19_000)), "19000");
+    }
+
+    #[test]
+    fn value_to_string_time64() {
+        use duckdb::types::TimeUnit;
+        assert_eq!(value_to_string(Value::Time64(TimeUnit::Microsecond, 1_000_000)), "1000000");
+    }
+
+    #[test]
+    fn value_to_string_timestamp() {
+        use duckdb::types::TimeUnit;
+        assert_eq!(value_to_string(Value::Timestamp(TimeUnit::Microsecond, 0)), "0");
+    }
+
+    #[test]
+    fn value_to_string_interval() {
+        assert_eq!(
+            value_to_string(Value::Interval { months: 1, days: 2, nanos: 300 }),
+            "1mo 2d 300ns"
+        );
+    }
+
+    #[test]
+    fn value_to_string_struct() {
+        use duckdb::types::OrderedMap;
+        let fields = OrderedMap::from(vec![("x".to_string(), Value::Int(1))]);
+        assert_eq!(value_to_string(Value::Struct(fields)), "{x: 1}");
+    }
+
+    #[test]
+    fn value_to_string_array() {
+        let items = vec![Value::Int(10), Value::Int(20)];
+        assert_eq!(value_to_string(Value::Array(items)), "[10, 20]");
+    }
+
+    #[test]
+    fn value_to_string_map() {
+        use duckdb::types::OrderedMap;
+        let pairs = OrderedMap::from(vec![(Value::Text("key".into()), Value::Int(42))]);
+        assert_eq!(value_to_string(Value::Map(pairs)), "{key: 42}");
     }
 
     #[test]
