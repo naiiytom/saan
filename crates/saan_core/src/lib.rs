@@ -10,12 +10,13 @@ pub mod strands;
 
 pub use ecs::{EntityId, Strand, World};
 pub use loom::{
-    CameraOrbitWeftSystem, FlipbookAnimationWeftSystem, HazardKind, Loom, LoomError, StrandHazard,
-    TensionReport, VelocityKinematicsSystem, WeftNode, WeftSystem,
+    CameraOrbitWeftSystem, FlipbookAnimationWeftSystem, HazardKind, Loom, LoomError,
+    PositionalAudioWeftSystem, StrandHazard, TensionReport, VelocityKinematicsSystem, WeftNode,
+    WeftSystem,
 };
 pub use pattern::{EntityBlueprint, SceneHotReloader, ScenePattern};
 pub use strands::{
-    BillboardMode, CameraProjection, CameraRig, Collider3D, ColliderShape, DirectionalLight,
-    FlipbookStrand, InputStrand, Material3D, Mesh3D, MeshPrimitive, NameStrand, PointLight,
-    Sprite25D, Transform, Velocity,
+    AudioEmitter3D, BillboardMode, CameraProjection, CameraRig, Collider3D, ColliderShape,
+    DirectionalLight, EventWeftStrand, FlipbookStrand, GameplayEvent, InputStrand, Material3D,
+    Mesh3D, MeshPrimitive, NameStrand, PointLight, Sprite25D, Transform, Velocity,
 };

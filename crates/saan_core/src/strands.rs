@@ -350,3 +350,79 @@ impl Collider3D {
     }
 }
 
+/// 3D positional audio emitter strand ("Sound Strand") woven onto entities in a 2.5D/3D world.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct AudioEmitter3D {
+    /// Sound clip asset ID (e.g., `"audio/spirit_chime_loop.ogg"`).
+    pub sound_id: String,
+    /// Base source volume in `[0.0, 2.0]`.
+    pub base_volume: f32,
+    /// Maximum audible radius in meters (inverse-distance rolloff).
+    pub max_distance: f32,
+    /// Whether this sound emitter loops continuously.
+    pub looping: bool,
+    /// Runtime calculated stereo gain `(left_ear, right_ear)` based on 3D listener pose.
+    #[serde(default)]
+    pub current_stereo_gain: [f32; 2],
+}
+
+impl Default for AudioEmitter3D {
+    fn default() -> Self {
+        Self {
+            sound_id: "audio/ambient_chime.ogg".to_string(),
+            base_volume: 1.0,
+            max_distance: 18.0,
+            looping: true,
+            current_stereo_gain: [0.0, 0.0],
+        }
+    }
+}
+
+/// Decoupled gameplay event emitted during a frame weave.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum GameplayEvent {
+    /// Emitted when a dynamic entity collides or slides against a static obstacle.
+    CollisionContact {
+        dynamic_entity: String,
+        obstacle_entity: String,
+        contact_point: Vec3,
+    },
+    /// Emitted when a dynamic entity steps up onto a ledge or stair.
+    SteppedUp {
+        entity: String,
+        step_height: f32,
+    },
+    /// Emitted when an audio emitter enters or leaves audible range.
+    AudioCue {
+        emitter: String,
+        sound_id: String,
+        stereo_gain: [f32; 2],
+    },
+    /// Custom named trigger (e.g., shrine activation, dialogue cue).
+    Trigger {
+        source: String,
+        tag: String,
+    },
+}
+
+/// Event bus strand (`EventWeft`) allowing systems to publish and subscribe to decoupled gameplay triggers.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct EventWeftStrand {
+    /// Events published during the current frame.
+    pub current_events: Vec<GameplayEvent>,
+    /// Total cumulative events processed across the session.
+    pub total_published: u64,
+}
+
+impl EventWeftStrand {
+    pub fn publish(&mut self, event: GameplayEvent) {
+        self.total_published += 1;
+        self.current_events.push(event);
+    }
+
+    pub fn drain_current(&mut self) -> Vec<GameplayEvent> {
+        std::mem::take(&mut self.current_events)
+    }
+}
+
+

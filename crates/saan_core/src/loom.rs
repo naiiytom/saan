@@ -6,7 +6,10 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use crate::ecs::World;
-use crate::strands::{CameraRig, FlipbookStrand, InputStrand, Sprite25D, Transform, Velocity};
+use crate::strands::{
+    AudioEmitter3D, CameraRig, EventWeftStrand, FlipbookStrand, GameplayEvent, InputStrand,
+    NameStrand, Sprite25D, Transform, Velocity,
+};
 
 /// A system ("Weft thread") that weaves through matching strands in the [`World`] each frame.
 pub trait WeftSystem: Send + Sync {
@@ -91,7 +94,7 @@ impl Loom {
         Self::default()
     }
 
-    /// Creates a Loom pre-configured with standard gameplay motion, flipbook animation, and camera systems.
+    /// Creates a Loom pre-configured with standard gameplay motion, flipbook animation, camera, and 3D audio systems.
     pub fn with_default_gameplay() -> Self {
         let mut loom = Self::new();
         loom.add_system(VelocityKinematicsSystem)
@@ -100,6 +103,12 @@ impl Loom {
             .expect("Failed to register FlipbookAnimationWeftSystem");
         loom.add_system(CameraOrbitWeftSystem)
             .expect("Failed to register CameraOrbitWeftSystem");
+        loom.add_system(PositionalAudioWeftSystem)
+            .expect("Failed to register PositionalAudioWeftSystem");
+        loom.add_ordering("velocity_kinematics", "positional_audio_3d")
+            .expect("Failed to order velocity_kinematics -> positional_audio_3d");
+        loom.add_ordering("camera_orbit_input", "positional_audio_3d")
+            .expect("Failed to order camera_orbit_input -> positional_audio_3d");
         loom
     }
 
@@ -349,6 +358,85 @@ impl WeftSystem for FlipbookAnimationWeftSystem {
     }
 }
 
+/// Built-in Weft system that computes 3D spatial stereo panning & distance attenuation
+/// for all [`AudioEmitter3D`] strands relative to the active [`CameraRig`] listener,
+/// and publishes [`GameplayEvent::AudioCue`] events to [`EventWeftStrand`].
+pub struct PositionalAudioWeftSystem;
+
+impl WeftSystem for PositionalAudioWeftSystem {
+    fn name(&self) -> &'static str {
+        "positional_audio_3d"
+    }
+
+    fn reads(&self) -> &[&'static str] {
+        &["CameraRig", "NameStrand", "Transform"]
+    }
+
+    fn writes(&self) -> &[&'static str] {
+        &["AudioEmitter3D", "EventWeftStrand"]
+    }
+
+    fn weave(&mut self, world: &mut World, _dt: f32) {
+        let camera = world
+            .query::<CameraRig>()
+            .next()
+            .map(|(_, &c)| c)
+            .unwrap_or_default();
+
+        let forward = (camera.target - camera.eye).normalize_or_zero();
+        let right = forward.cross(camera.up).normalize_or_zero();
+
+        let mut computed = Vec::new();
+        for (entity, emitter) in world.query::<AudioEmitter3D>() {
+            let pos = world
+                .get_strand::<Transform>(entity)
+                .map(|t| t.translation)
+                .unwrap_or(glam::Vec3::ZERO);
+            let label = world
+                .get_strand::<NameStrand>(entity)
+                .map(|n| n.0.clone())
+                .unwrap_or_else(|| entity.to_string());
+
+            let offset = pos - camera.eye;
+            let dist = offset.length();
+            let max_d = emitter.max_distance.max(0.01);
+
+            let stereo_gain = if dist >= max_d {
+                [0.0, 0.0]
+            } else {
+                // Smooth inverse-distance attenuation + stereo panner dot(to_source, listener_right)
+                let atten = (1.0 - (dist / max_d)).powi(2) * emitter.base_volume;
+                let dir = if dist > 1e-4 {
+                    offset / dist
+                } else {
+                    glam::Vec3::ZERO
+                };
+                let pan = dir.dot(right).clamp(-1.0, 1.0); // -1.0 = full left, +1.0 = full right
+                let left = atten * ((1.0 - pan) * 0.5).sqrt();
+                let right_g = atten * ((1.0 + pan) * 0.5).sqrt();
+                [left, right_g]
+            };
+
+            computed.push((entity, label, emitter.sound_id.clone(), stereo_gain));
+        }
+
+        for (entity, label, sound_id, gain) in computed {
+            if let Some(emitter) = world.get_strand_mut::<AudioEmitter3D>(entity) {
+                emitter.current_stereo_gain = gain;
+            }
+            if (gain[0] > 0.01 || gain[1] > 0.01)
+                && let Some((_, bus)) = world.query_mut::<EventWeftStrand>().next()
+            {
+                bus.publish(GameplayEvent::AudioCue {
+                    emitter: label,
+                    sound_id,
+                    stereo_gain: gain,
+                });
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -403,5 +491,53 @@ mod tests {
             loom.step(&mut World::new(), 0.016),
             Err(LoomError::CycleDetected)
         ));
+    }
+
+    #[test]
+    fn positional_audio_computes_stereo_pan_and_publishes_event() {
+        let mut world = World::new();
+        let cam_e = world.spawn();
+        world.weave_strand(
+            cam_e,
+            CameraRig {
+                eye: glam::Vec3::new(0.0, 0.0, 10.0),
+                target: glam::Vec3::ZERO,
+                up: glam::Vec3::Y,
+                ..Default::default()
+            },
+        );
+
+        let bus_e = world.spawn();
+        world.weave_strand(bus_e, EventWeftStrand::default());
+
+        // Emitter to the right (+X) of the camera looking down -Z
+        let emitter_e = world.spawn();
+        world
+            .weave_strand(emitter_e, NameStrand("right_bell".into()))
+            .weave_strand(emitter_e, Transform::from_xyz(3.0, 0.0, 5.0))
+            .weave_strand(
+                emitter_e,
+                AudioEmitter3D {
+                    sound_id: "audio/bell.ogg".into(),
+                    base_volume: 1.0,
+                    max_distance: 20.0,
+                    looping: true,
+                    current_stereo_gain: [0.0, 0.0],
+                },
+            );
+
+        let mut sys = PositionalAudioWeftSystem;
+        sys.weave(&mut world, 0.016);
+
+        let audio = world.get_strand::<AudioEmitter3D>(emitter_e).unwrap();
+        assert!(
+            audio.current_stereo_gain[1] > audio.current_stereo_gain[0],
+            "Expected right ear gain ({}) > left ear gain ({})",
+            audio.current_stereo_gain[1],
+            audio.current_stereo_gain[0]
+        );
+
+        let bus = world.get_strand::<EventWeftStrand>(bus_e).unwrap();
+        assert_eq!(bus.current_events.len(), 1);
     }
 }

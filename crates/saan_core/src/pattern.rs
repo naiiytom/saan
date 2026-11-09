@@ -7,9 +7,9 @@ use serde::{Deserialize, Serialize};
 
 use crate::ecs::{EntityId, World};
 use crate::strands::{
-    BillboardMode, CameraProjection, CameraRig, Collider3D, ColliderShape, DirectionalLight,
-    FlipbookStrand, Material3D, Mesh3D, MeshPrimitive, NameStrand, PointLight, Sprite25D,
-    Transform, Velocity,
+    AudioEmitter3D, BillboardMode, CameraProjection, CameraRig, Collider3D, ColliderShape,
+    DirectionalLight, EventWeftStrand, FlipbookStrand, Material3D, Mesh3D, MeshPrimitive,
+    NameStrand, PointLight, Sprite25D, Transform, Velocity,
 };
 
 /// Serializable blueprint of a single entity and its interwoven 2.5D/3D strands.
@@ -33,6 +33,8 @@ pub struct EntityBlueprint {
     pub directional_light: Option<DirectionalLight>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub point_light: Option<PointLight>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub audio_emitter: Option<AudioEmitter3D>,
 }
 
 /// A `.saan` Scene Pattern describing an entire hybrid 2.5D + 3D diorama world.
@@ -75,6 +77,7 @@ impl ScenePattern {
                     }),
                     directional_light: None,
                     point_light: None,
+                    audio_emitter: None,
                 },
                 EntityBlueprint {
                     name: "evening_sun".to_string(),
@@ -92,6 +95,7 @@ impl ScenePattern {
                         casts_shadows: true,
                     }),
                     point_light: None,
+                    audio_emitter: None,
                 },
                 EntityBlueprint {
                     name: "mossy_courtyard_ground".to_string(),
@@ -124,6 +128,7 @@ impl ScenePattern {
                     camera: None,
                     directional_light: None,
                     point_light: None,
+                    audio_emitter: None,
                 },
                 EntityBlueprint {
                     name: "stone_altar_3d".to_string(),
@@ -155,6 +160,7 @@ impl ScenePattern {
                     camera: None,
                     directional_light: None,
                     point_light: None,
+                    audio_emitter: None,
                 },
                 EntityBlueprint {
                     name: "wanderer_hero_25d".to_string(),
@@ -197,6 +203,13 @@ impl ScenePattern {
                     camera: None,
                     directional_light: None,
                     point_light: None,
+                    audio_emitter: Some(AudioEmitter3D {
+                        sound_id: "audio/footsteps_moss.ogg".to_string(),
+                        base_volume: 0.65,
+                        max_distance: 16.0,
+                        looping: true,
+                        current_stereo_gain: [0.0, 0.0],
+                    }),
                 },
                 EntityBlueprint {
                     name: "banyan_tree_canopy_25d".to_string(),
@@ -227,6 +240,13 @@ impl ScenePattern {
                     camera: None,
                     directional_light: None,
                     point_light: None,
+                    audio_emitter: Some(AudioEmitter3D {
+                        sound_id: "audio/banyan_wind_leaves.ogg".to_string(),
+                        base_volume: 0.5,
+                        max_distance: 20.0,
+                        looping: true,
+                        current_stereo_gain: [0.0, 0.0],
+                    }),
                 },
                 EntityBlueprint {
                     name: "spirit_lantern_25d".to_string(),
@@ -253,6 +273,13 @@ impl ScenePattern {
                         color: Vec3::new(1.0, 0.72, 0.3),
                         intensity: 4.5,
                         radius: 6.0,
+                    }),
+                    audio_emitter: Some(AudioEmitter3D {
+                        sound_id: "audio/spirit_lantern_chime.ogg".to_string(),
+                        base_volume: 0.9,
+                        max_distance: 18.0,
+                        looping: true,
+                        current_stereo_gain: [0.0, 0.0],
                     }),
                 },
             ],
@@ -311,8 +338,21 @@ impl ScenePattern {
             if let Some(pt_light) = bp.point_light {
                 world.weave_strand(entity, pt_light);
             }
+            if let Some(ref audio) = bp.audio_emitter {
+                world.weave_strand(entity, audio.clone());
+            }
             spawned.push(entity);
         }
+
+        // Ensure an EventWeftStrand bus exists in the world if not already present
+        if world.query::<EventWeftStrand>().next().is_none() {
+            let bus_entity = world.spawn();
+            world
+                .weave_strand(bus_entity, NameStrand("event_weft_bus".to_string()))
+                .weave_strand(bus_entity, EventWeftStrand::default());
+            spawned.push(bus_entity);
+        }
+
         spawned
     }
 }
@@ -375,10 +415,12 @@ mod tests {
         let mut world = World::new();
         let ids = scene.weave_into_world(&mut world);
 
-        assert_eq!(ids.len(), 7);
-        assert_eq!(world.entity_count(), 7);
+        assert_eq!(ids.len(), 8);
+        assert_eq!(world.entity_count(), 8);
         assert_eq!(world.query::<Sprite25D>().count(), 3);
         assert_eq!(world.query::<Mesh3D>().count(), 2);
         assert_eq!(world.query::<CameraRig>().count(), 1);
+        assert_eq!(world.query::<AudioEmitter3D>().count(), 3);
+        assert_eq!(world.query::<EventWeftStrand>().count(), 1);
     }
 }

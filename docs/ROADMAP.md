@@ -27,9 +27,9 @@ Saan is developed in six structured phases, growing from the core **Loom ECS & 2
 - [x] `saan_spatial` crate: 3D AABB (`Aabb3D`) and upright cylinder (`CylinderY`) colliders (`Collider3D`) tailored for 2.5D sprites moving in 3D space.
 - [x] Ground-plane snapping, automatic stair/ledge step-up (`max_step_height`), and raycasting (`ray_intersects_aabb`) for foreground camera occlusion fade (`CameraOcclusionWeftSystem`).
 
-## Phase 5: Audio & Scripting Strands
-- [ ] 3D positional audio (`kira` / `rodio`) woven into `Transform` strands.
-- [ ] Lightweight event bus (`EventWeft`) for decoupled gameplay triggers.
+## Phase 5: Audio & Scripting Strands (Complete)
+- [x] 3D positional audio strand (`AudioEmitter3D`) and `PositionalAudioWeftSystem` computing stereo panning & inverse-distance attenuation relative to the active `CameraRig`.
+- [x] Lightweight event bus (`EventWeftStrand` & `GameplayEvent`) woven into spatial collision and 3D audio systems for decoupled gameplay triggers.
 
 ## Phase 6: The Woven Inspector (Visual Editor)
 - [ ] In-engine overlay (`egui`) to inspect the live Loom DAG, tweak diorama tilt-shift/lighting parameters, and edit entity strands in real time.

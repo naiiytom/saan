@@ -8,8 +8,8 @@
 
 use glam::Vec3;
 use saan_core::{
-    CameraRig, Collider3D, EntityId, Loom, LoomError, Mesh3D, NameStrand, Sprite25D, Transform,
-    WeftSystem, World,
+    CameraRig, Collider3D, EntityId, EventWeftStrand, GameplayEvent, Loom, LoomError, Mesh3D,
+    NameStrand, Sprite25D, Transform, WeftSystem, World,
 };
 
 /// Registers the standard 2.5D/3D spatial collision and camera occlusion Weft systems onto `loom`,
@@ -20,6 +20,7 @@ pub fn register_spatial_systems(loom: &mut Loom) -> Result<(), LoomError> {
 
     loom.add_ordering("velocity_kinematics", "spatial_collision_3d")?;
     loom.add_ordering("spatial_collision_3d", "camera_occlusion_fade")?;
+    loom.add_ordering("spatial_collision_3d", "positional_audio_3d")?;
     loom.add_ordering("camera_orbit_input", "camera_occlusion_fade")?;
     loom.add_ordering("flipbook_sprite_animation", "camera_occlusion_fade")?;
     Ok(())
@@ -114,41 +115,70 @@ impl WeftSystem for SpatialCollisionWeftSystem {
     }
 
     fn reads(&self) -> &[&'static str] {
-        &["Collider3D"]
+        &["Collider3D", "NameStrand"]
     }
 
     fn writes(&self) -> &[&'static str] {
-        &["Transform"]
+        &["EventWeftStrand", "Transform"]
     }
 
     fn weave(&mut self, world: &mut World, _dt: f32) {
-        let mut static_boxes: Vec<(EntityId, Vec3, Vec3)> = Vec::new();
-        let mut dynamic_entities: Vec<(EntityId, Collider3D, Vec3)> = Vec::new();
+        let mut static_boxes: Vec<(String, Vec3, Vec3)> = Vec::new();
+        let mut dynamic_entities: Vec<(EntityId, String, Collider3D, Vec3)> = Vec::new();
 
         for (entity, col) in world.query::<Collider3D>() {
             let Some(transform) = world.get_strand::<Transform>(entity) else {
                 continue;
             };
+            let label = world
+                .get_strand::<NameStrand>(entity)
+                .map(|n| n.0.clone())
+                .unwrap_or_else(|| entity.to_string());
             if col.is_static {
                 let (bmin, bmax) = col.world_aabb(transform.translation);
-                static_boxes.push((entity, bmin, bmax));
+                static_boxes.push((label, bmin, bmax));
             } else {
-                dynamic_entities.push((entity, *col, transform.translation));
+                dynamic_entities.push((entity, label, *col, transform.translation));
             }
         }
 
-        for (dyn_entity, dyn_col, mut pos) in dynamic_entities {
+        let mut events = Vec::new();
+
+        for (dyn_entity, dyn_label, dyn_col, mut pos) in dynamic_entities {
             // Clamp to ground floor y >= 0.0
             if pos.y < 0.0 {
                 pos.y = 0.0;
             }
 
-            for &(_stat_entity, stat_min, stat_max) in &static_boxes {
-                pos = resolve_aabb_vs_static(pos, &dyn_col, stat_min, stat_max);
+            for (stat_label, stat_min, stat_max) in &static_boxes {
+                let prev = pos;
+                pos = resolve_aabb_vs_static(pos, &dyn_col, *stat_min, *stat_max);
+                if (pos - prev).length_squared() > 1e-6 {
+                    if (pos.y - prev.y).abs() > 1e-4 {
+                        events.push(GameplayEvent::SteppedUp {
+                            entity: dyn_label.clone(),
+                            step_height: pos.y - prev.y,
+                        });
+                    } else {
+                        events.push(GameplayEvent::CollisionContact {
+                            dynamic_entity: dyn_label.clone(),
+                            obstacle_entity: stat_label.clone(),
+                            contact_point: pos,
+                        });
+                    }
+                }
             }
 
             if let Some(transform) = world.get_strand_mut::<Transform>(dyn_entity) {
                 transform.translation = pos;
+            }
+        }
+
+        if !events.is_empty()
+            && let Some((_, bus)) = world.query_mut::<EventWeftStrand>().next()
+        {
+            for ev in events {
+                bus.publish(ev);
             }
         }
     }
@@ -227,7 +257,7 @@ mod tests {
 
         let report = loom.inspect_tension();
         assert!(report.is_taut(), "Expected taut Loom DAG, got hazards: {:?}", report.hazards);
-        assert_eq!(report.system_count, 5);
+        assert_eq!(report.system_count, 6);
     }
 
     #[test]

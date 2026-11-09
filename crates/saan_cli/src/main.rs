@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use anyhow::{bail, Context, Result};
 use clap::{Parser, Subcommand};
-use saan_core::{Loom, ScenePattern, World};
+use saan_core::{EventWeftStrand, Loom, ScenePattern, World};
 use saan_render::window::{run_windowed, WindowOptions};
 use saan_render::RenderLoom;
 
@@ -182,6 +182,13 @@ fn main() -> Result<()> {
                         sprite.camera_distance,
                         sprite.casts_shadow
                     );
+                }
+
+                if let Some((_, bus)) = world.query_mut::<EventWeftStrand>().next() {
+                    let events = bus.drain_current();
+                    for ev in events {
+                        println!("   ~ EventWeft: {ev:?}");
+                    }
                 }
             }
         }
