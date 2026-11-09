@@ -31,5 +31,5 @@ Saan is developed in six structured phases, growing from the core **Loom ECS & 2
 - [x] 3D positional audio strand (`AudioEmitter3D`) and `PositionalAudioWeftSystem` computing stereo panning & inverse-distance attenuation relative to the active `CameraRig`.
 - [x] Lightweight event bus (`EventWeftStrand` & `GameplayEvent`) woven into spatial collision and 3D audio systems for decoupled gameplay triggers.
 
-## Phase 6: The Woven Inspector (Visual Editor)
-- [ ] In-engine overlay (`egui`) to inspect the live Loom DAG, tweak diorama tilt-shift/lighting parameters, and edit entity strands in real time.
+## Phase 6: The Woven Inspector (Visual Editor) (Complete)
+- [x] In-engine Woven Inspector HUD overlay (`InspectorStrand` + `append_woven_inspector_hud` in `saan_render::gpu`) to inspect the live Loom DAG nodes, tweak diorama tilt-shift DOF focus/blur and directional lighting parameters, and cycle entity strands in real time.

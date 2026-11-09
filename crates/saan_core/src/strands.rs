@@ -425,4 +425,44 @@ impl EventWeftStrand {
     }
 }
 
+/// Phase 6: In-Engine Woven Inspector (`InspectorStrand`) for live DAG telemetry and diorama parameter tweaking.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct InspectorStrand {
+    /// Whether the on-screen Woven Inspector HUD overlay is visible (toggled via `Tab` or `F1`).
+    pub visible: bool,
+    /// Currently selected entity index in the live world inspector.
+    pub selected_entity_idx: usize,
+    /// Smoothed frames-per-second telemetry.
+    pub fps: f32,
+    /// Last frame delta-time in milliseconds.
+    pub frame_ms: f32,
+    /// Whether the Loom DAG is currently taut (zero cycles/hazards).
+    pub loom_taut: bool,
+    /// Count of active Weft systems in the Loom schedule.
+    pub active_system_count: usize,
+    /// Live Diorama Tilt-Shift focus distance override delta.
+    pub focus_distance_delta: f32,
+    /// Live Diorama Tilt-Shift aperture blur override delta.
+    pub aperture_blur_delta: f32,
+    /// Live Directional Sun intensity override delta.
+    pub sun_intensity_delta: f32,
+}
+
+impl Default for InspectorStrand {
+    fn default() -> Self {
+        Self {
+            visible: true,
+            selected_entity_idx: 0,
+            fps: 60.0,
+            frame_ms: 16.6,
+            loom_taut: true,
+            active_system_count: 6,
+            focus_distance_delta: 0.0,
+            aperture_blur_delta: 0.0,
+            sun_intensity_delta: 0.0,
+        }
+    }
+}
+
+
 

@@ -76,14 +76,30 @@ impl GpuSceneUniforms {
             _ => (12.0, 0.0),
         };
 
+        let (focus_delta, blur_delta, sun_delta) = frame
+            .inspector
+            .as_ref()
+            .map(|i| (i.focus_distance_delta, i.aperture_blur_delta, i.sun_intensity_delta))
+            .unwrap_or((0.0, 0.0, 0.0));
+
         Self {
             view_proj: frame.view_proj.to_cols_array_2d(),
             camera_pos: [frame.camera.eye.x, frame.camera.eye.y, frame.camera.eye.z, 1.0],
-            sun_dir_intensity: [sun_dir.x, sun_dir.y, sun_dir.z, sun_intensity],
+            sun_dir_intensity: [
+                sun_dir.x,
+                sun_dir.y,
+                sun_dir.z,
+                (sun_intensity + sun_delta).max(0.0),
+            ],
             sun_color: [sun_col.x, sun_col.y, sun_col.z, 1.0],
             point_light_pos_radius: [pt_pos.x, pt_pos.y, pt_pos.z, pt_radius],
             point_light_color_intensity: [pt_col.x, pt_col.y, pt_col.z, pt_intensity],
-            diorama_params: [focus_dist, aperture_blur, elapsed_secs, 0.0],
+            diorama_params: [
+                (focus_dist + focus_delta).max(1.0),
+                (aperture_blur + blur_delta).clamp(0.0, 2.0),
+                elapsed_secs,
+                0.0,
+            ],
         }
     }
 }
@@ -109,7 +125,103 @@ pub fn tessellate_frame(frame: &RenderFrame) -> (Vec<InterlacedVertex>, Vec<Inte
         append_sprite_25d_quad(&mut sprite_vertices, sprite);
     }
 
+    // Phase 6: Woven Inspector HUD Overlay (rendered in 2D NDC when InspectorStrand::visible is true)
+    if let Some(ref inspector) = frame.inspector
+        && inspector.visible
+    {
+        append_woven_inspector_hud(&mut sprite_vertices, frame, inspector);
+    }
+
     (mesh_vertices, sprite_vertices)
+}
+
+fn push_ndc_rect(out: &mut Vec<InterlacedVertex>, x0: f32, y0: f32, x1: f32, y1: f32, color: [f32; 4]) {
+    push_quad(
+        out,
+        Vec3::new(x0, y0, 0.0),
+        Vec3::new(x1, y0, 0.0),
+        Vec3::new(x1, y1, 0.0),
+        Vec3::new(x0, y1, 0.0),
+        Vec3::Z,
+        color,
+        5.0,
+    );
+}
+
+fn append_woven_inspector_hud(
+    out: &mut Vec<InterlacedVertex>,
+    frame: &RenderFrame,
+    inspector: &saan_core::InspectorStrand,
+) {
+    // Translucent dark slate Inspector panel in top-left NDC `[-0.96..-0.38, 0.36..0.94]`
+    push_ndc_rect(out, -0.96, 0.36, -0.38, 0.94, [0.05, 0.07, 0.12, 0.82]);
+    // Golden woven header bar
+    push_ndc_rect(out, -0.96, 0.89, -0.38, 0.94, [0.76, 0.58, 0.28, 0.92]);
+
+    // Loom DAG System Nodes (6 woven nodes displayed as taut emerald badges)
+    let sys_count = inspector.active_system_count.clamp(1, 8);
+    let badge_w = 0.50 / sys_count as f32;
+    for i in 0..sys_count {
+        let bx0 = -0.93 + i as f32 * badge_w;
+        let bx1 = bx0 + badge_w * 0.78;
+        let color = if inspector.loom_taut {
+            [0.22, 0.78, 0.52, 0.95]
+        } else {
+            [0.92, 0.28, 0.28, 0.95]
+        };
+        push_ndc_rect(out, bx0, 0.78, bx1, 0.85, color);
+    }
+
+    // Diorama DOF Focus Distance slider bar
+    let focus_norm = ((11.5 + inspector.focus_distance_delta) / 25.0).clamp(0.05, 1.0);
+    push_ndc_rect(out, -0.93, 0.67, -0.43, 0.72, [0.15, 0.18, 0.26, 0.9]);
+    push_ndc_rect(
+        out,
+        -0.93,
+        0.67,
+        -0.93 + 0.50 * focus_norm,
+        0.72,
+        [0.32, 0.68, 0.92, 0.95],
+    );
+
+    // Diorama Aperture Blur slider bar
+    let blur_norm = ((0.75 + inspector.aperture_blur_delta) / 2.0).clamp(0.05, 1.0);
+    push_ndc_rect(out, -0.93, 0.57, -0.43, 0.62, [0.15, 0.18, 0.26, 0.9]);
+    push_ndc_rect(
+        out,
+        -0.93,
+        0.57,
+        -0.93 + 0.50 * blur_norm,
+        0.62,
+        [0.68, 0.45, 0.92, 0.95],
+    );
+
+    // Sun Intensity slider bar
+    let sun_norm = ((2.2 + inspector.sun_intensity_delta) / 5.0).clamp(0.05, 1.0);
+    push_ndc_rect(out, -0.93, 0.47, -0.43, 0.52, [0.15, 0.18, 0.26, 0.9]);
+    push_ndc_rect(
+        out,
+        -0.93,
+        0.47,
+        -0.93 + 0.50 * sun_norm,
+        0.52,
+        [0.95, 0.76, 0.28, 0.95],
+    );
+
+    // Entity selector strip along bottom of inspector panel
+    let entity_slots = frame.entity_count.clamp(1, 10);
+    let slot_w = 0.50 / entity_slots as f32;
+    for idx in 0..entity_slots {
+        let sx0 = -0.93 + idx as f32 * slot_w;
+        let sx1 = sx0 + slot_w * 0.8;
+        let is_selected = idx == (inspector.selected_entity_idx % entity_slots);
+        let col = if is_selected {
+            [0.98, 0.82, 0.32, 1.0]
+        } else {
+            [0.28, 0.32, 0.42, 0.85]
+        };
+        push_ndc_rect(out, sx0, 0.39, sx1, 0.44, col);
+    }
 }
 
 fn push_quad(
@@ -726,5 +838,12 @@ mod tests {
         assert_eq!(mesh_verts.len(), 42);
         // 2 shadow quads (12 verts) + 3 sprite quads (18 verts) = 30 vertices
         assert_eq!(sprite_verts.len(), 30);
+
+        // Enable Phase 6 Woven Inspector HUD and verify HUD quads are tessellated
+        let insp = world.spawn();
+        world.weave_strand(insp, saan_core::InspectorStrand::default());
+        let frame_with_hud = RenderLoom::hd2d_pipeline().extract_frame(&world);
+        let (_, sprite_verts_with_hud) = tessellate_frame(&frame_with_hud);
+        assert!(sprite_verts_with_hud.len() > 30);
     }
 }

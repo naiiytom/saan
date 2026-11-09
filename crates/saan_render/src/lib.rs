@@ -13,8 +13,8 @@ use glam::{Mat4, Quat, Vec2, Vec3, Vec4};
 use petgraph::algo::toposort;
 use petgraph::graph::DiGraph;
 use saan_core::{
-    BillboardMode, CameraProjection, CameraRig, DirectionalLight, EntityId, Mesh3D, MeshPrimitive,
-    NameStrand, PointLight, Sprite25D, Transform, World,
+    BillboardMode, CameraProjection, CameraRig, DirectionalLight, EntityId, InspectorStrand,
+    Mesh3D, MeshPrimitive, NameStrand, PointLight, Sprite25D, Transform, World,
 };
 use serde::{Deserialize, Serialize};
 
@@ -69,6 +69,8 @@ pub struct RenderFrame {
     pub lighting: FrameLighting,
     pub diorama_dof_enabled: bool,
     pub pass_order: Vec<String>,
+    pub inspector: Option<InspectorStrand>,
+    pub entity_count: usize,
 }
 
 /// Node in the Render Graph ("Render Loom").
@@ -236,6 +238,7 @@ impl RenderLoom {
             .collect();
 
         let diorama_dof_enabled = matches!(camera.projection, CameraProjection::DioramaTilt { .. });
+        let inspector = world.query::<InspectorStrand>().next().map(|(_, s)| s.clone());
 
         RenderFrame {
             camera,
@@ -249,6 +252,8 @@ impl RenderLoom {
             },
             diorama_dof_enabled,
             pass_order: self.pass_schedule(),
+            inspector,
+            entity_count: world.entity_count(),
         }
     }
 }

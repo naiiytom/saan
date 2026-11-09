@@ -43,7 +43,12 @@ struct VertexOutput {
 @vertex
 fn vs_main(in: VertexInput) -> VertexOutput {
     var out: VertexOutput;
-    out.clip_pos = scene.view_proj * vec4<f32>(in.world_pos, 1.0);
+    // kind >= 5.0 is 2D NDC HUD overlay for Phase 6 Woven Inspector
+    if (in.kind > 4.5) {
+        out.clip_pos = vec4<f32>(in.world_pos.xy, 0.0, 1.0);
+    } else {
+        out.clip_pos = scene.view_proj * vec4<f32>(in.world_pos, 1.0);
+    }
     out.world_pos = in.world_pos;
     out.world_normal = normalize(in.world_normal);
     out.uv = in.uv;
@@ -59,6 +64,10 @@ fn pixel_uv(uv: vec2<f32>, grid: f32) -> vec2<f32> {
 
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
+    if (in.kind > 4.5) {
+        return in.color;
+    }
+
     var base_rgba = in.color;
     var normal = normalize(in.world_normal);
     var emissive = vec3<f32>(0.0);
