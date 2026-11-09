@@ -4,6 +4,7 @@ members = [
     "crates/saan_core",
     "crates/saan_asset",
     "crates/saan_spatial",
+    "crates/saan_script",
     "crates/saan_render",
     "crates/saan_cli",
 ]

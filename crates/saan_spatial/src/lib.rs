@@ -1,10 +1,21 @@
-//! # `saan_spatial` — 2.5D & 3D Spatial Physics, Collision & Raycasting
+//! # `saan_spatial` — 2.5D & 3D Spatial Physics, Navigation, Collision & Commanding
 //!
 //! Provides spatial systems woven into the [`saan_core::Loom`] DAG:
 //! - [`SpatialCollisionWeftSystem`]: Resolves 3D AABB & CylinderY collisions for 2.5D sprites moving in 3D space,
 //!   including automatic stair/ledge step-up (`max_step_height`) and ground-plane snapping.
 //! - [`CameraOcclusionWeftSystem`]: Casts a 3D ray from the active [`CameraRig`] to the hero entity and smoothly
 //!   fades any occluding 2.5D/3D obstacles marked with `fade_when_occluding_camera`.
+//! - [`GridMap3D`]: 3D multi-height tilemap grid with discrete A* pathfinding and continuous flow-field navigation.
+//! - [`AgentCommandingWeftSystem`]: Drives hero action, RTS unit squads, and turn-based tactical pawns.
+
+pub mod commanding;
+pub mod navigation;
+
+pub use commanding::{
+    select_entities_in_rect, AgentCommandingWeftSystem, AgentController, ControllerMode,
+    SelectionStrand, UnitOrder,
+};
+pub use navigation::{FlowField25D, GridMap3D, TileData, TileType};
 
 use glam::Vec3;
 use saan_core::{
@@ -12,12 +23,14 @@ use saan_core::{
     NameStrand, Sprite25D, Transform, WeftSystem, World,
 };
 
-/// Registers the standard 2.5D/3D spatial collision and camera occlusion Weft systems onto `loom`,
-/// wired in deterministic topological order (`velocity_kinematics` -> `spatial_collision_3d` -> `camera_occlusion_fade`).
+/// Registers the standard 2.5D/3D spatial collision, navigation, commanding and camera occlusion Weft systems onto `loom`,
+/// wired in deterministic topological order (`agent_commanding_weft` -> `velocity_kinematics` -> `spatial_collision_3d` -> `camera_occlusion_fade`).
 pub fn register_spatial_systems(loom: &mut Loom) -> Result<(), LoomError> {
+    loom.add_system(AgentCommandingWeftSystem)?;
     loom.add_system(SpatialCollisionWeftSystem)?;
     loom.add_system(CameraOcclusionWeftSystem)?;
 
+    loom.add_ordering("agent_commanding_weft", "velocity_kinematics")?;
     loom.add_ordering("velocity_kinematics", "spatial_collision_3d")?;
     loom.add_ordering("spatial_collision_3d", "camera_occlusion_fade")?;
     loom.add_ordering("spatial_collision_3d", "positional_audio_3d")?;
@@ -257,7 +270,7 @@ mod tests {
 
         let report = loom.inspect_tension();
         assert!(report.is_taut(), "Expected taut Loom DAG, got hazards: {:?}", report.hazards);
-        assert_eq!(report.system_count, 6);
+        assert_eq!(report.system_count, 7);
     }
 
     #[test]
@@ -334,5 +347,59 @@ mod tests {
 
         let tree_sprite = world.get_strand::<Sprite25D>(tree_e).unwrap();
         assert!((tree_sprite.tint.w - 0.35).abs() < 1e-4);
+    }
+
+    #[test]
+    fn grid_a_star_navigates_elevated_terrain_and_respects_walls() {
+        let mut grid = GridMap3D::new(5, 5, 1.0, Vec3::ZERO);
+        // Put a wall at (2, 0), (2, 1), (2, 2)
+        grid.set_tile(2, 0, TileData { walkable: false, ..Default::default() });
+        grid.set_tile(2, 1, TileData { walkable: false, ..Default::default() });
+        grid.set_tile(2, 2, TileData { walkable: false, ..Default::default() });
+
+        // Elevated step at (1, 3)
+        grid.set_tile(1, 3, TileData { elevation: 0.5, ..Default::default() });
+
+        let path = grid.find_path_a_star((0, 1), (4, 1), 1.0).unwrap();
+        assert_eq!(*path.first().unwrap(), (0, 1));
+        assert_eq!(*path.last().unwrap(), (4, 1));
+        // Path should loop around the wall (y >= 3)
+        assert!(path.iter().any(|p| p.1 >= 3));
+    }
+
+    #[test]
+    fn flow_field_steers_rts_squad_towards_target() {
+        let grid = GridMap3D::new(8, 8, 1.0, Vec3::ZERO);
+        let flow = FlowField25D::build(&grid, (0, 0));
+
+        let steer = flow.sample_steering(Vec3::new(4.5, 0.0, 0.5));
+        // At (4, 0) steering towards (0, 0) should have negative X direction
+        assert!(steer.x < 0.0);
+    }
+
+    #[test]
+    fn rts_squad_executes_move_order() {
+        let mut world = World::new();
+        let unit_e = world.spawn();
+        world
+            .weave_strand(unit_e, Transform::from_xyz(0.0, 0.0, 0.0))
+            .weave_strand(unit_e, Velocity::default())
+            .weave_strand(
+                unit_e,
+                AgentController {
+                    mode: ControllerMode::RtsSquad {
+                        squad_id: 1,
+                        move_speed: 4.0,
+                        current_order: Some(UnitOrder::MoveTo(Vec3::new(10.0, 0.0, 0.0))),
+                        order_queue: Vec::new(),
+                    },
+                },
+            );
+
+        let mut sys = AgentCommandingWeftSystem;
+        sys.weave(&mut world, 0.016);
+
+        let v = world.get_strand::<Velocity>(unit_e).unwrap();
+        assert!(v.linear.x > 3.9);
     }
 }

@@ -464,5 +464,28 @@ impl Default for InspectorStrand {
     }
 }
 
+/// Script strand binding an entity to a Rhai gameplay script file or inline code.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ScriptStrand {
+    /// Path to the script file (e.g. `"scripts/hero_controller.rhai"`) or identifier.
+    pub script_path: String,
+    /// Inline Rhai script source code if not loading from disk.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub inline_source: Option<String>,
+    /// Whether the script is currently active.
+    pub enabled: bool,
+}
+
+impl Default for ScriptStrand {
+    fn default() -> Self {
+        Self {
+            script_path: "scripts/default_behavior.rhai".to_string(),
+            inline_source: None,
+            enabled: true,
+        }
+    }
+}
+
+
 
 

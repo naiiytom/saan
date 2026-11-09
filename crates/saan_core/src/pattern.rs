@@ -9,7 +9,7 @@ use crate::ecs::{EntityId, World};
 use crate::strands::{
     AudioEmitter3D, BillboardMode, CameraProjection, CameraRig, Collider3D, ColliderShape,
     DirectionalLight, EventWeftStrand, FlipbookStrand, Material3D, Mesh3D, MeshPrimitive,
-    NameStrand, PointLight, Sprite25D, Transform, Velocity,
+    NameStrand, PointLight, ScriptStrand, Sprite25D, Transform, Velocity,
 };
 
 /// Serializable blueprint of a single entity and its interwoven 2.5D/3D strands.
@@ -35,6 +35,8 @@ pub struct EntityBlueprint {
     pub point_light: Option<PointLight>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub audio_emitter: Option<AudioEmitter3D>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub script: Option<ScriptStrand>,
 }
 
 /// A `.saan` Scene Pattern describing an entire hybrid 2.5D + 3D diorama world.
@@ -78,6 +80,7 @@ impl ScenePattern {
                     directional_light: None,
                     point_light: None,
                     audio_emitter: None,
+                    script: None,
                 },
                 EntityBlueprint {
                     name: "evening_sun".to_string(),
@@ -96,6 +99,7 @@ impl ScenePattern {
                     }),
                     point_light: None,
                     audio_emitter: None,
+                    script: None,
                 },
                 EntityBlueprint {
                     name: "mossy_courtyard_ground".to_string(),
@@ -129,6 +133,7 @@ impl ScenePattern {
                     directional_light: None,
                     point_light: None,
                     audio_emitter: None,
+                    script: None,
                 },
                 EntityBlueprint {
                     name: "stone_altar_3d".to_string(),
@@ -161,6 +166,7 @@ impl ScenePattern {
                     directional_light: None,
                     point_light: None,
                     audio_emitter: None,
+                    script: None,
                 },
                 EntityBlueprint {
                     name: "wanderer_hero_25d".to_string(),
@@ -210,6 +216,20 @@ impl ScenePattern {
                         looping: true,
                         current_stereo_gain: [0.0, 0.0],
                     }),
+                    script: Some(ScriptStrand {
+                        script_path: "scripts/wanderer_ai.rhai".to_string(),
+                        inline_source: Some(r#"
+                            fn on_tick(dt) {
+                                // Patrol loop when reaching boundary
+                                if pos.x > 3.0 {
+                                    vel.x = -0.5;
+                                } else if pos.x < -3.0 {
+                                    vel.x = 0.5;
+                                }
+                            }
+                        "#.to_string()),
+                        enabled: true,
+                    }),
                 },
                 EntityBlueprint {
                     name: "banyan_tree_canopy_25d".to_string(),
@@ -247,6 +267,7 @@ impl ScenePattern {
                         looping: true,
                         current_stereo_gain: [0.0, 0.0],
                     }),
+                    script: None,
                 },
                 EntityBlueprint {
                     name: "spirit_lantern_25d".to_string(),
@@ -281,6 +302,7 @@ impl ScenePattern {
                         looping: true,
                         current_stereo_gain: [0.0, 0.0],
                     }),
+                    script: None,
                 },
             ],
         }
@@ -340,6 +362,9 @@ impl ScenePattern {
             }
             if let Some(ref audio) = bp.audio_emitter {
                 world.weave_strand(entity, audio.clone());
+            }
+            if let Some(ref script) = bp.script {
+                world.weave_strand(entity, script.clone());
             }
             spawned.push(entity);
         }
