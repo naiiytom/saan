@@ -67,7 +67,8 @@ impl SaanApp {
         let input_entity = world.spawn();
         world.weave_strand(input_entity, InputStrand::default());
 
-        let loom = Loom::with_default_gameplay();
+        let mut loom = Loom::with_default_gameplay();
+        let _ = saan_spatial::register_spatial_systems(&mut loom);
         let render_loom = RenderLoom::hd2d_pipeline();
         let now = Instant::now();
 

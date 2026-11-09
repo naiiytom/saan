@@ -23,9 +23,9 @@ Saan is developed in six structured phases, growing from the core **Loom ECS & 2
 - [x] `FlipbookStrand` & `FlipbookAnimationWeftSystem` in `saan_core` + GPU texture/sampler binding in `saan_render` for animated 2.5D sprites.
 - [x] Hot-reloading `.saan` scene patterns (`SceneHotReloader`) while `saan run` is active.
 
-## Phase 4: 2.5D/3D Spatial Physics & Collision
-- [ ] `saan_spatial` crate: 3D AABB, cylinder, and capsule colliders tailored for 2.5D sprites moving in 3D space.
-- [ ] Ground-plane snapping, step-up stairs/slopes, and raycasting for camera occlusion fade.
+## Phase 4: 2.5D/3D Spatial Physics & Collision (Complete)
+- [x] `saan_spatial` crate: 3D AABB (`Aabb3D`) and upright cylinder (`CylinderY`) colliders (`Collider3D`) tailored for 2.5D sprites moving in 3D space.
+- [x] Ground-plane snapping, automatic stair/ledge step-up (`max_step_height`), and raycasting (`ray_intersects_aabb`) for foreground camera occlusion fade (`CameraOcclusionWeftSystem`).
 
 ## Phase 5: Audio & Scripting Strands
 - [ ] 3D positional audio (`kira` / `rodio`) woven into `Transform` strands.

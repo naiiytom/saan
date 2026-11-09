@@ -112,7 +112,8 @@ fn main() -> Result<()> {
             let mut world = World::new();
             pattern.weave_into_world(&mut world);
 
-            let loom = Loom::with_default_gameplay();
+            let mut loom = Loom::with_default_gameplay();
+            saan_spatial::register_spatial_systems(&mut loom)?;
             let tension = loom.inspect_tension();
             let render_loom = RenderLoom::hd2d_pipeline();
             let frame = render_loom.extract_frame(&world);
@@ -160,6 +161,7 @@ fn main() -> Result<()> {
             pattern.weave_into_world(&mut world);
 
             let mut loom = Loom::with_default_gameplay();
+            saan_spatial::register_spatial_systems(&mut loom)?;
             let render_loom = RenderLoom::hd2d_pipeline();
 
             for frame_idx in 1..=frames {

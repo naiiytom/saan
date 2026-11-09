@@ -16,6 +16,7 @@
 | :--- | :--- | :--- |
 | `saan_core` | **The Loom** | Custom ECS (`World`, `EntityId`, `Strand`), spatial math (`glam`), DAG system scheduler (`Loom`), tension validation, and `.saan` scene patterns |
 | `saan_asset` | **The Shaver** | Asset pipeline: Aseprite JSON spritesheet shaver (`FlipbookStrand`), `.obj` 3D mesh shaver (`MeshAssetData`), and RGBA8 sprite sheet textures |
+| `saan_spatial` | **The Frame** | 2.5D/3D collision (`Collider3D`: `Aabb3D`, `CylinderY`), automatic stair/ledge step-up, and 3D raycast camera occlusion fade |
 | `saan_render` | **The Mesh** | Hybrid 2.5D + 3D `wgpu` render graph (`ShadowPass` → `Opaque3DPass` → `Interlace25DPass` → `DioramaPostPass`), billboard math, and depth sorting |
 | `saan_cli` | **The Craft** | CLI toolbelt: `saan init`, `saan inspect`, `saan weave`, `saan run` |
 

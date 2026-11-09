@@ -1507,6 +1507,7 @@ dependencies = [
  "clap",
  "saan_core",
  "saan_render",
+ "saan_spatial",
  "serde_json",
 ]
 
@@ -1532,9 +1533,19 @@ dependencies = [
  "pollster",
  "saan_asset",
  "saan_core",
+ "saan_spatial",
  "serde",
  "wgpu",
  "winit",
+]
+
+[[package]]
+name = "saan_spatial"
+version = "0.1.0"
+dependencies = [
+ "glam",
+ "saan_core",
+ "serde",
 ]
 
 [[package]]

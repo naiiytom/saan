@@ -3,6 +3,7 @@ resolver = "2"
 members = [
     "crates/saan_core",
     "crates/saan_asset",
+    "crates/saan_spatial",
     "crates/saan_render",
     "crates/saan_cli",
 ]

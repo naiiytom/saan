@@ -89,7 +89,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
         let nx = (local_u - 0.5) * 1.4;
         let ny = (0.5 - in.uv.y) * 0.6;
         normal = normalize(normal + vec3<f32>(nx, ny, 0.25));
-        base_rgba = vec4<f32>(sampled.rgb * in.color.rgb, sampled.a);
+        base_rgba = vec4<f32>(sampled.rgb * in.color.rgb, sampled.a * in.color.a);
     } else if (in.kind >= 1.5 && in.kind < 2.5) {
         // 2.0: Banyan Tree 2.5D Sprite (pixelated trunk + layered leafy canopy)
         let p = pixel_uv(in.uv, 32.0);
@@ -116,7 +116,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
             discard;
         }
         normal = normalize(normal + vec3<f32>(cx * 1.5, (cy - 0.5) * 1.2, 0.3));
-        base_rgba = vec4<f32>(col, 1.0);
+        base_rgba = vec4<f32>(col * in.color.rgb, in.color.a);
     } else if (in.kind >= 2.5 && in.kind < 3.5) {
         // 3.0: Spirit Lantern Wisp (Spherical 2.5D billboard with warm core glow)
         let centered = (in.uv - vec2<f32>(0.5, 0.5)) * 2.0;

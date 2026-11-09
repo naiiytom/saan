@@ -7,8 +7,9 @@ use serde::{Deserialize, Serialize};
 
 use crate::ecs::{EntityId, World};
 use crate::strands::{
-    BillboardMode, CameraProjection, CameraRig, DirectionalLight, FlipbookStrand, Material3D,
-    Mesh3D, MeshPrimitive, NameStrand, PointLight, Sprite25D, Transform, Velocity,
+    BillboardMode, CameraProjection, CameraRig, Collider3D, ColliderShape, DirectionalLight,
+    FlipbookStrand, Material3D, Mesh3D, MeshPrimitive, NameStrand, PointLight, Sprite25D,
+    Transform, Velocity,
 };
 
 /// Serializable blueprint of a single entity and its interwoven 2.5D/3D strands.
@@ -18,6 +19,8 @@ pub struct EntityBlueprint {
     pub transform: Transform,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub velocity: Option<Velocity>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub collider_3d: Option<Collider3D>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sprite_25d: Option<Sprite25D>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -53,6 +56,7 @@ impl ScenePattern {
                     name: "diorama_camera".to_string(),
                     transform: Transform::from_xyz(0.0, 6.5, 11.0),
                     velocity: None,
+                    collider_3d: None,
                     sprite_25d: None,
                     flipbook: None,
                     mesh_3d: None,
@@ -76,6 +80,7 @@ impl ScenePattern {
                     name: "evening_sun".to_string(),
                     transform: Transform::from_xyz(10.0, 20.0, 8.0),
                     velocity: None,
+                    collider_3d: None,
                     sprite_25d: None,
                     flipbook: None,
                     mesh_3d: None,
@@ -92,6 +97,14 @@ impl ScenePattern {
                     name: "mossy_courtyard_ground".to_string(),
                     transform: Transform::from_xyz(0.0, 0.0, 0.0),
                     velocity: None,
+                    collider_3d: Some(Collider3D {
+                        shape: ColliderShape::Aabb3D {
+                            half_extents: Vec3::new(12.0, 0.1, 12.0),
+                        },
+                        is_static: true,
+                        max_step_height: 0.0,
+                        fade_when_occluding_camera: false,
+                    }),
                     sprite_25d: None,
                     flipbook: None,
                     mesh_3d: Some(Mesh3D {
@@ -116,6 +129,14 @@ impl ScenePattern {
                     name: "stone_altar_3d".to_string(),
                     transform: Transform::from_xyz(0.0, 0.75, -2.5),
                     velocity: None,
+                    collider_3d: Some(Collider3D {
+                        shape: ColliderShape::Aabb3D {
+                            half_extents: Vec3::new(1.5, 0.75, 1.0),
+                        },
+                        is_static: true,
+                        max_step_height: 0.0,
+                        fade_when_occluding_camera: true,
+                    }),
                     sprite_25d: None,
                     flipbook: None,
                     mesh_3d: Some(Mesh3D {
@@ -141,6 +162,15 @@ impl ScenePattern {
                     velocity: Some(Velocity {
                         linear: Vec3::new(0.5, 0.0, -0.25),
                         angular_y: 0.0,
+                    }),
+                    collider_3d: Some(Collider3D {
+                        shape: ColliderShape::CylinderY {
+                            radius: 0.45,
+                            height: 1.8,
+                        },
+                        is_static: false,
+                        max_step_height: 0.45,
+                        fade_when_occluding_camera: false,
                     }),
                     sprite_25d: Some(Sprite25D {
                         texture_id: "sprites/wanderer_walk_sheet.png".to_string(),
@@ -172,6 +202,15 @@ impl ScenePattern {
                     name: "banyan_tree_canopy_25d".to_string(),
                     transform: Transform::from_xyz(-3.2, 0.0, -1.0),
                     velocity: None,
+                    collider_3d: Some(Collider3D {
+                        shape: ColliderShape::CylinderY {
+                            radius: 0.65,
+                            height: 4.0,
+                        },
+                        is_static: true,
+                        max_step_height: 0.0,
+                        fade_when_occluding_camera: true,
+                    }),
                     sprite_25d: Some(Sprite25D {
                         texture_id: "sprites/banyan_tree.png".to_string(),
                         size: Vec2::new(3.5, 4.2),
@@ -194,6 +233,7 @@ impl ScenePattern {
                     transform: Transform::from_xyz(1.8, 1.4, -1.2)
                         .with_rotation(Quat::IDENTITY),
                     velocity: None,
+                    collider_3d: None,
                     sprite_25d: Some(Sprite25D {
                         texture_id: "sprites/spirit_wisp.png".to_string(),
                         size: Vec2::new(0.6, 0.6),
@@ -249,6 +289,9 @@ impl ScenePattern {
 
             if let Some(vel) = bp.velocity {
                 world.weave_strand(entity, vel);
+            }
+            if let Some(col) = bp.collider_3d {
+                world.weave_strand(entity, col);
             }
             if let Some(ref sprite) = bp.sprite_25d {
                 world.weave_strand(entity, sprite.clone());

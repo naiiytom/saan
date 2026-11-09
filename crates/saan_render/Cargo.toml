@@ -13,6 +13,7 @@ petgraph = "0.6"
 pollster = "0.4"
 saan_asset = { path = "../saan_asset" }
 saan_core = { path = "../saan_core" }
+saan_spatial = { path = "../saan_spatial" }
 serde = { version = "1.0", features = ["derive"] }
 wgpu = "23.0"
 winit = "0.30"

@@ -15,6 +15,7 @@ pub use loom::{
 };
 pub use pattern::{EntityBlueprint, SceneHotReloader, ScenePattern};
 pub use strands::{
-    BillboardMode, CameraProjection, CameraRig, DirectionalLight, FlipbookStrand, InputStrand,
-    Material3D, Mesh3D, MeshPrimitive, NameStrand, PointLight, Sprite25D, Transform, Velocity,
+    BillboardMode, CameraProjection, CameraRig, Collider3D, ColliderShape, DirectionalLight,
+    FlipbookStrand, InputStrand, Material3D, Mesh3D, MeshPrimitive, NameStrand, PointLight,
+    Sprite25D, Transform, Velocity,
 };

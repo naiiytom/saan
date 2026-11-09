@@ -302,3 +302,51 @@ pub struct PointLight {
     pub intensity: f32,
     pub radius: f32,
 }
+
+/// 2.5D/3D collision shape attached to an entity.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub enum ColliderShape {
+    /// Axis-aligned 3D bounding box with `half_extents` `(hx, hy, hz)` centered at `Transform::translation`.
+    Aabb3D { half_extents: Vec3 },
+    /// Upright cylinder with `radius` in XZ and total `height` along Y (bottom at `translation.y`).
+    /// Ideal for 2.5D billboard sprites moving inside a 3D world.
+    CylinderY { radius: f32, height: f32 },
+}
+
+/// Spatial collision & ground/stair-snapping strand for 2.5D sprites and 3D props.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct Collider3D {
+    pub shape: ColliderShape,
+    /// Static colliders (floors, walls, altars) do not move when pushed; dynamic ones slide/step.
+    pub is_static: bool,
+    /// Maximum vertical step height (in meters) this entity can automatically climb when walking into a ledge/stair.
+    #[serde(default = "default_step_height")]
+    pub max_step_height: f32,
+    /// Whether this 3D obstacle should fade/occlude when blocking the camera's line of sight to the hero.
+    #[serde(default)]
+    pub fade_when_occluding_camera: bool,
+}
+
+fn default_step_height() -> f32 {
+    0.45
+}
+
+impl Collider3D {
+    /// Computes the world-space `(min, max)` AABB for this collider at `translation`.
+    pub fn world_aabb(&self, translation: Vec3) -> (Vec3, Vec3) {
+        match self.shape {
+            ColliderShape::Aabb3D { half_extents } => {
+                (translation - half_extents, translation + half_extents)
+            }
+            ColliderShape::CylinderY { radius, height } => (
+                Vec3::new(translation.x - radius, translation.y, translation.z - radius),
+                Vec3::new(
+                    translation.x + radius,
+                    translation.y + height,
+                    translation.z + radius,
+                ),
+            ),
+        }
+    }
+}
+
