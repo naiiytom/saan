@@ -1,0 +1,13 @@
+[package]
+name = "saan_audio"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Pure-Rust rodio audio playback engine with spatial SFX and BGM buses for Saan"
+
+[dependencies]
+glam = { version = "0.29", features = ["serde"] }
+rodio = { version = "0.19", default-features = false, features = ["wav", "vorbis"] }
+saan_core = { path = "../saan_core" }
+serde = { version = "1.0", features = ["derive"] }
+thiserror = "1.0"

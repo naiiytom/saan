@@ -486,6 +486,182 @@ impl Default for ScriptStrand {
     }
 }
 
+/// Tactical 2.5D Fog of War visibility grid strand.
+///
+/// Tracks explored and visible cells across the diorama world plane (XZ).
+/// Cells store visibility: 0 = unexplored (black), 128 = shrouded (explored but hidden), 255 = fully revealed.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct FogOfWarStrand {
+    pub width: u32,
+    pub height: u32,
+    pub world_min: Vec2,
+    pub world_max: Vec2,
+    pub cells: Vec<u8>,
+}
+
+impl FogOfWarStrand {
+    pub fn new(width: u32, height: u32, world_min: Vec2, world_max: Vec2) -> Self {
+        let size = (width * height) as usize;
+        Self {
+            width,
+            height,
+            world_min,
+            world_max,
+            cells: vec![0; size],
+        }
+    }
+
+    pub fn default_diorama() -> Self {
+        Self::new(64, 64, Vec2::new(-12.0, -12.0), Vec2::new(12.0, 12.0))
+    }
+
+    /// Converts world XZ coordinate into grid (gx, gz) cell index.
+    pub fn world_to_grid(&self, wx: f32, wz: f32) -> Option<(u32, u32)> {
+        if wx < self.world_min.x || wx > self.world_max.x || wz < self.world_min.y || wz > self.world_max.y {
+            return None;
+        }
+        let u = (wx - self.world_min.x) / (self.world_max.x - self.world_min.x);
+        let v = (wz - self.world_min.y) / (self.world_max.y - self.world_min.y);
+        let gx = (u * self.width as f32).clamp(0.0, (self.width - 1) as f32) as u32;
+        let gz = (v * self.height as f32).clamp(0.0, (self.height - 1) as f32) as u32;
+        Some((gx, gz))
+    }
+
+    /// Downgrades all currently revealed cells (255) to shrouded (128) before actors re-reveal current vision.
+    pub fn shroud_visible(&mut self) {
+        for cell in &mut self.cells {
+            if *cell == 255 {
+                *cell = 128;
+            }
+        }
+    }
+
+    /// Reveals a circular vision area centered at `(center_x, center_z)` with radius in meters.
+    pub fn reveal_circle(&mut self, center_x: f32, center_z: f32, radius: f32) {
+        let min_x = center_x - radius;
+        let max_x = center_x + radius;
+        let min_z = center_z - radius;
+        let max_z = center_z + radius;
+
+        let (g_min_x, g_min_z) = self.world_to_grid(min_x, min_z).unwrap_or((0, 0));
+        let (g_max_x, g_max_z) = self
+            .world_to_grid(max_x, max_z)
+            .unwrap_or((self.width - 1, self.height - 1));
+
+        let r2 = radius * radius;
+        let w_span = self.world_max.x - self.world_min.x;
+        let h_span = self.world_max.y - self.world_min.y;
+
+        for gz in g_min_z..=g_max_z.min(self.height - 1) {
+            let wz = self.world_min.y + (gz as f32 + 0.5) / self.height as f32 * h_span;
+            let dz = wz - center_z;
+            for gx in g_min_x..=g_max_x.min(self.width - 1) {
+                let wx = self.world_min.x + (gx as f32 + 0.5) / self.width as f32 * w_span;
+                let dx = wx - center_x;
+                if dx * dx + dz * dz <= r2 {
+                    let idx = (gz * self.width + gx) as usize;
+                    if idx < self.cells.len() {
+                        self.cells[idx] = 255;
+                    }
+                }
+            }
+        }
+    }
+
+    /// Samples visibility at world coordinate `(wx, wz)`. Returns 0 (unexplored), 128 (shrouded), or 255 (visible).
+    pub fn get_visibility(&self, wx: f32, wz: f32) -> u8 {
+        match self.world_to_grid(wx, wz) {
+            Some((gx, gz)) => self.cells[(gz * self.width + gx) as usize],
+            None => 0,
+        }
+    }
+}
+
+/// Single active particle in the world.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ParticleData {
+    pub position: Vec3,
+    pub velocity: Vec3,
+    pub lifetime_left: f32,
+    pub max_lifetime: f32,
+    pub size: f32,
+    pub color: [f32; 4],
+}
+
+/// 3D/2.5D particle emitter strand for dust puffs, spirit wisps, sparks, and spell impacts.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ParticleEmitter3D {
+    pub emission_rate: f32,
+    pub particle_lifetime: f32,
+    pub initial_velocity: Vec3,
+    pub velocity_spread: Vec3,
+    pub gravity: Vec3,
+    pub start_color: [f32; 4],
+    pub end_color: [f32; 4],
+    pub size: f32,
+    #[serde(default)]
+    pub spawn_accumulator: f32,
+    #[serde(skip)]
+    pub particles: Vec<ParticleData>,
+}
+
+impl Default for ParticleEmitter3D {
+    fn default() -> Self {
+        Self::spirit_wisps()
+    }
+}
+
+impl ParticleEmitter3D {
+    pub fn spirit_wisps() -> Self {
+        Self {
+            emission_rate: 8.0,
+            particle_lifetime: 1.6,
+            initial_velocity: Vec3::new(0.0, 0.4, 0.0),
+            velocity_spread: Vec3::new(0.3, 0.2, 0.3),
+            gravity: Vec3::new(0.0, 0.1, 0.0),
+            start_color: [1.0, 0.85, 0.45, 0.9],
+            end_color: [0.9, 0.4, 0.1, 0.0],
+            size: 0.25,
+            spawn_accumulator: 0.0,
+            particles: Vec::new(),
+        }
+    }
+
+    pub fn step(&mut self, origin: Vec3, dt: f32) {
+        for p in &mut self.particles {
+            p.lifetime_left -= dt;
+            p.velocity += self.gravity * dt;
+            p.position += p.velocity * dt;
+            let life_frac = (p.lifetime_left / p.max_lifetime).clamp(0.0, 1.0);
+            for i in 0..4 {
+                p.color[i] = self.end_color[i] + (self.start_color[i] - self.end_color[i]) * life_frac;
+            }
+        }
+        self.particles.retain(|p| p.lifetime_left > 0.0);
+
+        self.spawn_accumulator += self.emission_rate * dt;
+        while self.spawn_accumulator >= 1.0 {
+            self.spawn_accumulator -= 1.0;
+            let offset_x = (self.particles.len() as f32 * 1.618).fract() * 2.0 - 1.0;
+            let offset_z = (self.particles.len() as f32 * 2.414).fract() * 2.0 - 1.0;
+            let vel = self.initial_velocity
+                + Vec3::new(
+                    offset_x * self.velocity_spread.x,
+                    ((self.particles.len() as f32 * 0.73).fract() * 2.0 - 1.0) * self.velocity_spread.y,
+                    offset_z * self.velocity_spread.z,
+                );
+            self.particles.push(ParticleData {
+                position: origin + Vec3::new(offset_x * 0.1, 0.0, offset_z * 0.1),
+                velocity: vel,
+                lifetime_left: self.particle_lifetime,
+                max_lifetime: self.particle_lifetime,
+                size: self.size,
+                color: self.start_color,
+            });
+        }
+    }
+}
+
 
 
 

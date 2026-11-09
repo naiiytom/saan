@@ -22,40 +22,46 @@ This file gives AI agents working on this repo the context they need to contribu
 ## Architecture
 
 ```
-saan_core     (The Loom)   — Custom ECS (Warp/Entities, Strands/Components), Weft DAG scheduler, Transform/Math, Scene Pattern (.saan)
-saan_render   (The Mesh)   — Hybrid 2.5D (HD-2D sprites/billboards) + 3D mesh render graph, cameras, lighting, depth interlacing
-saan_cli      (The Craft)  — CLI toolbelt (`saan init`, `saan inspect`, `saan weave`, `saan run`)
+saan_core     (The Loom)       — Custom ECS (Warp/Entities, Strands/Components), Weft DAG scheduler, Transform/Math, Scene Pattern (.saan), Fog of War, Particles
+saan_asset    (The Thread)     — Asset loaders (Aseprite JSON, Wavefront OBJ, RGBA8 sprite generation)
+saan_spatial  (The Space)      — 3D collision (AABB/Cylinder), stair step-up, raycast occlusion fade, dual nav (GridMap3D & FlowField25D), agent commanding
+saan_script   (The Mind)       — Embedded Rhai scripting engine (ScriptStrand, ScriptHost, hot-reloadable gameplay logic)
+saan_audio    (The Resonance)  — Rodio-backed 3D spatial audio & BGM engine, procedural waveform synthesis fallback, headless-safe
+saan_render   (The Mesh)       — Hybrid HD-2D billboard sprites + 3D meshes, directional hardware depth shadows, Fog of War, tilt-shift DOF post-processing
+saan_editor   (The Craft Loom) — Integrated diorama editor (entity hierarchy, strand inspector, 3D grid tile brush, .saan save)
+saan_cli      (The Station)    — CLI toolbelt (`saan init`, `saan inspect`, `saan weave`, `saan run`, `saan edit`)
 ```
 
 ## Core Concepts in `saan_core`
 
 1. **`EntityId` & `World` (The Warp):**
    - Lightweight generational entity IDs and typed component columns (`StrandStorage`).
-   - Query API for fetching entities with combinations of 2.5D and 3D `Strand` components (e.g., `Transform3D`, `Sprite25D`, `Mesh3D`, `CameraRig`, `PointLight3D`).
+   - Query API for fetching entities with combinations of 2.5D and 3D `Strand` components (e.g., `Transform`, `Velocity`, `Sprite25D`, `Mesh3D`, `CameraRig`, `PointLight`, `FogOfWarStrand`, `ParticleEmitter3D`).
 
 2. **`WeftSystem` & `Loom` (The Weft & Scheduler):**
    - Systems declare their read/write component access (`reads()`, `writes()`) and explicit ordering dependencies.
    - `Loom` builds a `petgraph` DAG of systems and render passes, validates **Tension** (detecting cycles or conflicting read/write access on the same strand without an ordering edge), and executes systems in deterministic topological order.
 
 3. **`Pattern` (`.saan` Scene Format):**
-   - Serializable RON/JSON scene format describing entities and their interwoven strands (transforms, 2.5D sprites, 3D meshes, lights, camera rigs).
+   - Serializable JSON scene format describing entities and their interwoven strands. Supports hydration into `World` and extraction from `World` back to `.saan`.
 
 ## Core Concepts in `saan_render`
 
 1. **HD-2D & Diorama Interlacing:**
-   - Unifies 2D sprites (`Sprite25D` with billboard modes: `WorldPlane`, `YAxisBillboard`, `FullBillboard`, normal maps, depth offset, and shadow casting) and 3D geometry (`Mesh3D`, `Material3D`) in a single depth-buffered pipeline.
-2. **Render Loom (Render Graph):**
+   - Unifies 2D sprites (`Sprite25D` with billboard modes: `WorldPlane`, `CylindricalY`, `Spherical`, normal maps, depth offset, and shadow casting) and 3D geometry (`Mesh3D`, `Material3D`) in a single depth-buffered pipeline.
+2. **Tactical Rendering Loom:**
    - Built-in render passes woven as a DAG:
-     `ShadowPass` → `Opaque3DPass` → `Interlace25DPass` (depth-sorted/alpha-tested 2.5D sprites + 3D lighting) → `PostProcessPass` (tilt-shift/DOF, bloom, vignette for diorama aesthetics).
+     `ShadowMapPass` (2048x2048 depth with 4-tap PCF) → `Opaque3DPass` → `Interlace25DPass` (depth-sorted/alpha-tested 2.5D sprites + 3D lighting + dynamic Fog of War 2D texture) → `PostProcessPass` (tilt-shift DOF, bloom, vignette for diorama aesthetics).
 
 ## CLI Commands (`saan_cli`)
 
-| Command | Phase 1 Status | Description |
+| Command | Status | Description |
 |---|---|---|
-| `saan init [path] [--force]` | Implemented | Scaffolds a new Saan game project & default `.saan` scene pattern |
-| `saan inspect [scene]` | Implemented | Checks "tension" on the Loom DAG and validates a `.saan` scene pattern |
-| `saan weave [scene]` | Implemented | Steps the Loom + Render Graph headless for verification & frame telemetry |
-| `saan run [scene]` | Implemented | Opens interactive `winit` + `wgpu` window running the scene |
+| `saan init [path] [--template diorama_sandbox] [--force]` | Implemented | Scaffolds a new Saan scene pattern (default or diorama sandbox) |
+| `saan inspect [scene]` | Implemented | Checks "tension" on the Loom DAG (validating all 11 systems) and scene strands |
+| `saan weave [scene] [--frames N] [--dt DT]` | Implemented | Steps the Loom + Render Graph headless for verification & frame telemetry |
+| `saan run [scene] [--width W] [--height H]` | Implemented | Opens interactive `winit` + `wgpu` window running the scene |
+| `saan edit [scene] [--width W] [--height H]` | Implemented | Opens interactive Saan Craft Editor (hierarchy, inspector, tile brush, .saan save) |
 
 ## Running Locally
 

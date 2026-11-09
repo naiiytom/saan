@@ -34,6 +34,12 @@ pub fn register_spatial_systems(loom: &mut Loom) -> Result<(), LoomError> {
     loom.add_ordering("velocity_kinematics", "spatial_collision_3d")?;
     loom.add_ordering("spatial_collision_3d", "camera_occlusion_fade")?;
     loom.add_ordering("spatial_collision_3d", "positional_audio_3d")?;
+    if loom.has_system("particle_simulation_weft") {
+        loom.add_ordering("spatial_collision_3d", "particle_simulation_weft")?;
+    }
+    if loom.has_system("fog_of_war_update") {
+        loom.add_ordering("spatial_collision_3d", "fog_of_war_update")?;
+    }
     loom.add_ordering("camera_orbit_input", "camera_occlusion_fade")?;
     loom.add_ordering("flipbook_sprite_animation", "camera_occlusion_fade")?;
     Ok(())
@@ -270,7 +276,7 @@ mod tests {
 
         let report = loom.inspect_tension();
         assert!(report.is_taut(), "Expected taut Loom DAG, got hazards: {:?}", report.hazards);
-        assert_eq!(report.system_count, 7);
+        assert_eq!(report.system_count, 9);
     }
 
     #[test]

@@ -1,33 +1,46 @@
 //! WGSL shaders for the Saan HD-2D & 3D Interlaced Render Pipeline.
 
-/// Unified WGSL shader for Pass 2 (`OpaqueMesh3DPass`) and Pass 3 (`Sprite25DInterlacePass`).
+/// Unified WGSL shader for Pass 1 (`ShadowMapPass`), Pass 2 (`OpaqueMesh3DPass`),
+/// and Pass 3 (`Sprite25DInterlacePass`).
 ///
 /// Interweaves 3D geometry and procedural/textured 2.5D billboard sprites in the same
-/// depth-buffered world with directional + point lighting and ground shadow projection.
+/// depth-buffered world with directional + point lighting, PCF directional shadow maps,
+/// dynamic Fog of War visibility, and tilt-shift diorama depth-of-field.
 pub const HD2D_INTERLACE_WGSL: &str = r#"
 struct SceneUniforms {
     view_proj: mat4x4<f32>,
+    light_view_proj: mat4x4<f32>,
     camera_pos: vec4<f32>,
     sun_dir_intensity: vec4<f32>,
     sun_color: vec4<f32>,
     point_light_pos_radius: vec4<f32>,
     point_light_color_intensity: vec4<f32>,
     diorama_params: vec4<f32>, // x: focus_dist, y: aperture_blur, z: time, w: unused
+    fow_bounds: vec4<f32>,     // x: min_x, y: min_z, z: max_x, w: max_z
 };
 
 @group(0) @binding(0)
 var<uniform> scene: SceneUniforms;
-@group(0) @binding(1)
+
+@group(1) @binding(0)
 var hero_sheet_tex: texture_2d<f32>;
-@group(0) @binding(2)
+@group(1) @binding(1)
 var hero_sheet_sampler: sampler;
+@group(1) @binding(2)
+var fow_tex: texture_2d<f32>;
+@group(1) @binding(3)
+var fow_sampler: sampler;
+@group(1) @binding(4)
+var shadow_tex: texture_depth_2d;
+@group(1) @binding(5)
+var shadow_sampler: sampler_comparison;
 
 struct VertexInput {
     @location(0) world_pos: vec3<f32>,
     @location(1) world_normal: vec3<f32>,
     @location(2) uv: vec2<f32>,
     @location(3) color: vec4<f32>,
-    /// kind: 0.0 = 3D Mesh, 1.0 = 2.5D Hero Sprite, 2.0 = 2.5D Tree Sprite, 3.0 = 2.5D Spirit Lantern, 4.0 = Ground Shadow
+    /// kind: 0.0 = 3D Mesh, 1.0 = 2.5D Hero Sprite, 2.0 = 2.5D Tree Sprite, 3.0 = 2.5D Spirit Lantern/Particles, 4.0 = Ground Shadow
     @location(4) kind: f32,
 };
 
@@ -55,6 +68,14 @@ fn vs_main(in: VertexInput) -> VertexOutput {
     out.color = in.color;
     out.kind = in.kind;
     return out;
+}
+
+@vertex
+fn vs_shadow(in: VertexInput) -> @builtin(position) vec4<f32> {
+    if (in.kind > 4.5) {
+        return vec4<f32>(2.0, 2.0, 2.0, 1.0); // Cull HUD from shadow map
+    }
+    return scene.light_view_proj * vec4<f32>(in.world_pos, 1.0);
 }
 
 // Quantizes UV into crisp HD-2D pixel grid coordinates
@@ -127,7 +148,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
         normal = normalize(normal + vec3<f32>(cx * 1.5, (cy - 0.5) * 1.2, 0.3));
         base_rgba = vec4<f32>(col * in.color.rgb, in.color.a);
     } else if (in.kind >= 2.5 && in.kind < 3.5) {
-        // 3.0: Spirit Lantern Wisp (Spherical 2.5D billboard with warm core glow)
+        // 3.0: Spirit Lantern / Particles Wisp (Spherical 2.5D billboard with warm core glow)
         let centered = (in.uv - vec2<f32>(0.5, 0.5)) * 2.0;
         let r = length(centered);
         if (r > 1.0) {
@@ -135,7 +156,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
         }
         let glow = pow(1.0 - r, 1.8);
         emissive = in.color.rgb * (2.2 * glow);
-        base_rgba = vec4<f32>(in.color.rgb, clamp(glow * 1.3, 0.2, 0.98));
+        base_rgba = vec4<f32>(in.color.rgb, clamp(glow * 1.3, 0.2, 0.98) * in.color.a);
     } else {
         // 0.0: 3D Mesh (subtle woven tile grid on courtyard stone & altar)
         let grid = abs(fract(in.world_pos.xz * 0.5) - vec2<f32>(0.5, 0.5));
@@ -144,11 +165,28 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
         base_rgba = vec4<f32>(in.color.rgb * (0.82 + 0.18 * mortar), in.color.a);
     }
 
-    // 3D Directional Sun Lighting
+    // Hardware Directional Depth Shadow mapping (PCF 4-tap)
+    let light_clip = scene.light_view_proj * vec4<f32>(in.world_pos, 1.0);
+    let shadow_coords = light_clip.xyz / light_clip.w;
+    let shadow_uv = shadow_coords.xy * vec2<f32>(0.5, -0.5) + vec2<f32>(0.5, 0.5);
+    let current_depth = shadow_coords.z - 0.003;
+    var shadow_factor = 1.0;
+
+    if (shadow_uv.x >= 0.0 && shadow_uv.x <= 1.0 && shadow_uv.y >= 0.0 && shadow_uv.y <= 1.0 && current_depth <= 1.0) {
+        let texel = 1.0 / 2048.0;
+        var s = 0.0;
+        s += textureSampleCompare(shadow_tex, shadow_sampler, shadow_uv + vec2<f32>(-texel, -texel), current_depth);
+        s += textureSampleCompare(shadow_tex, shadow_sampler, shadow_uv + vec2<f32>(texel, -texel), current_depth);
+        s += textureSampleCompare(shadow_tex, shadow_sampler, shadow_uv + vec2<f32>(-texel, texel), current_depth);
+        s += textureSampleCompare(shadow_tex, shadow_sampler, shadow_uv + vec2<f32>(texel, texel), current_depth);
+        shadow_factor = s * 0.25;
+    }
+
+    // 3D Directional Sun Lighting with hardware shadow
     let sun_dir = normalize(-scene.sun_dir_intensity.xyz);
     let sun_ndl = max(dot(normal, sun_dir), 0.0);
     let ambient = vec3<f32>(0.22, 0.25, 0.32);
-    var lit = base_rgba.rgb * (ambient + scene.sun_color.rgb * (sun_ndl * scene.sun_dir_intensity.w * 0.45));
+    var lit = base_rgba.rgb * (ambient + scene.sun_color.rgb * (sun_ndl * scene.sun_dir_intensity.w * 0.45 * shadow_factor));
 
     // 3D Point Light (Spirit Lantern illuminates both 3D ground/altar AND 2.5D sprites)
     let to_pt = scene.point_light_pos_radius.xyz - in.world_pos;
@@ -162,6 +200,15 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     }
 
     lit += emissive;
+
+    // Tactical Fog of War 2D Grid sampling
+    let fow_uv = (in.world_pos.xz - scene.fow_bounds.xy) / (scene.fow_bounds.zw - scene.fow_bounds.xy);
+    var fow_vis = 1.0;
+    if (fow_uv.x >= 0.0 && fow_uv.x <= 1.0 && fow_uv.y >= 0.0 && fow_uv.y <= 1.0) {
+        let sample_fow = textureSample(fow_tex, fow_sampler, fow_uv).r;
+        fow_vis = mix(0.12, 1.0, sample_fow);
+    }
+    lit = lit * fow_vis;
 
     // Pass 4: Diorama Tilt-Shift Depth-of-Field & Vignette atmospheric desaturation
     let cam_dist = distance(scene.camera_pos.xyz, in.world_pos);

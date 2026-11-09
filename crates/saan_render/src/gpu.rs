@@ -43,12 +43,14 @@ impl InterlacedVertex {
 #[derive(Clone, Copy, Debug, Pod, Zeroable)]
 pub struct GpuSceneUniforms {
     pub view_proj: [[f32; 4]; 4],
+    pub light_view_proj: [[f32; 4]; 4],
     pub camera_pos: [f32; 4],
     pub sun_dir_intensity: [f32; 4],
     pub sun_color: [f32; 4],
     pub point_light_pos_radius: [f32; 4],
     pub point_light_color_intensity: [f32; 4],
     pub diorama_params: [f32; 4],
+    pub fow_bounds: [f32; 4],
 }
 
 impl GpuSceneUniforms {
@@ -59,6 +61,11 @@ impl GpuSceneUniforms {
             .first()
             .map(|l| (l.direction, l.color, l.intensity))
             .unwrap_or((Vec3::new(-0.4, -0.8, -0.3).normalize(), Vec3::ONE, 1.5));
+
+        let sun_pos = -sun_dir.normalize() * 22.0;
+        let light_view = glam::Mat4::look_at_rh(sun_pos, Vec3::ZERO, Vec3::Y);
+        let light_proj = glam::Mat4::orthographic_rh(-16.0, 16.0, -16.0, 16.0, 1.0, 50.0);
+        let light_view_proj = (light_proj * light_view).to_cols_array_2d();
 
         let (pt_pos, pt_radius, pt_col, pt_intensity) = frame
             .lighting
@@ -82,8 +89,15 @@ impl GpuSceneUniforms {
             .map(|i| (i.focus_distance_delta, i.aperture_blur_delta, i.sun_intensity_delta))
             .unwrap_or((0.0, 0.0, 0.0));
 
+        let fow_bounds = frame
+            .fog_of_war
+            .as_ref()
+            .map(|f| [f.world_min.x, f.world_min.y, f.world_max.x, f.world_max.y])
+            .unwrap_or([-12.0, -12.0, 12.0, 12.0]);
+
         Self {
             view_proj: frame.view_proj.to_cols_array_2d(),
+            light_view_proj,
             camera_pos: [frame.camera.eye.x, frame.camera.eye.y, frame.camera.eye.z, 1.0],
             sun_dir_intensity: [
                 sun_dir.x,
@@ -100,6 +114,7 @@ impl GpuSceneUniforms {
                 elapsed_secs,
                 0.0,
             ],
+            fow_bounds,
         }
     }
 }
@@ -123,6 +138,11 @@ pub fn tessellate_frame(frame: &RenderFrame) -> (Vec<InterlacedVertex>, Vec<Inte
     // Pass 3: Back-to-front depth-sorted 2.5D billboard sprites
     for sprite in &frame.sprites_25d {
         append_sprite_25d_quad(&mut sprite_vertices, sprite);
+    }
+
+    // HD-2D / Diorama: 3D billboard particles (spirit wisps, embers, dust)
+    for p in &frame.particles {
+        append_particle_quad(&mut sprite_vertices, p, &frame.camera);
     }
 
     // Phase 6: Woven Inspector HUD Overlay (rendered in 2D NDC when InspectorStrand::visible is true)
@@ -433,6 +453,39 @@ fn append_ground_shadow_quad(out: &mut Vec<InterlacedVertex>, sprite: &Sprite25D
     push_quad(out, p0, p1, p2, p3, Vec3::Y, [0.0, 0.0, 0.0, 0.5], 4.0);
 }
 
+fn append_particle_quad(
+    out: &mut Vec<InterlacedVertex>,
+    p: &saan_core::ParticleData,
+    camera: &saan_core::CameraRig,
+) {
+    let to_cam = camera.eye - p.position;
+    let forward = if to_cam.length_squared() > 1e-4 {
+        to_cam.normalize()
+    } else {
+        Vec3::Z
+    };
+    let right = forward.cross(camera.up).normalize();
+    let up = right.cross(forward).normalize();
+    let hs = p.size * 0.5;
+
+    let p0 = p.position - right * hs - up * hs;
+    let p1 = p.position + right * hs - up * hs;
+    let p2 = p.position + right * hs + up * hs;
+    let p3 = p.position - right * hs + up * hs;
+
+    push_quad_uv(
+        out,
+        p0,
+        p1,
+        p2,
+        p3,
+        [0.0, 0.0, 1.0, 1.0],
+        forward,
+        p.color,
+        3.0,
+    );
+}
+
 /// Active `wgpu` state executing the Saan 2.5D + 3D interlaced pipeline.
 pub struct GpuRenderer {
     pub surface: wgpu::Surface<'static>,
@@ -442,8 +495,13 @@ pub struct GpuRenderer {
     pub depth_view: wgpu::TextureView,
     pub uniform_buffer: wgpu::Buffer,
     pub uniform_bind_group: wgpu::BindGroup,
+    pub material_bind_group: wgpu::BindGroup,
     pub opaque_3d_pipeline: wgpu::RenderPipeline,
     pub interlace_25d_pipeline: wgpu::RenderPipeline,
+    pub shadow_texture: wgpu::Texture,
+    pub shadow_view: wgpu::TextureView,
+    pub shadow_pipeline: wgpu::RenderPipeline,
+    pub fow_texture: wgpu::Texture,
 }
 
 impl GpuRenderer {
@@ -556,10 +614,68 @@ impl GpuRenderer {
             ..Default::default()
         });
 
-        let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("SceneUniforms + SpriteSheet Layout"),
-            entries: &[
-                wgpu::BindGroupLayoutEntry {
+        // Tactical Fog of War 2D texture (64x64 R8Unorm grid)
+        let fow_size = wgpu::Extent3d {
+            width: 64,
+            height: 64,
+            depth_or_array_layers: 1,
+        };
+        let fow_texture = device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("Tactical Fog of War Grid Texture"),
+            size: fow_size,
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::R8Unorm,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+            view_formats: &[],
+        });
+        let fow_view = fow_texture.create_view(&wgpu::TextureViewDescriptor::default());
+        let fow_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+            label: Some("Fog of War Linear Sampler"),
+            address_mode_u: wgpu::AddressMode::ClampToEdge,
+            address_mode_v: wgpu::AddressMode::ClampToEdge,
+            address_mode_w: wgpu::AddressMode::ClampToEdge,
+            mag_filter: wgpu::FilterMode::Linear,
+            min_filter: wgpu::FilterMode::Linear,
+            mipmap_filter: wgpu::FilterMode::Nearest,
+            ..Default::default()
+        });
+
+        // Directional Hardware Shadow Map Depth Texture (2048x2048)
+        let shadow_size = wgpu::Extent3d {
+            width: 2048,
+            height: 2048,
+            depth_or_array_layers: 1,
+        };
+        let shadow_texture = device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("Directional Shadow Map Depth Texture"),
+            size: shadow_size,
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: Self::DEPTH_FORMAT,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
+            view_formats: &[],
+        });
+        let shadow_view = shadow_texture.create_view(&wgpu::TextureViewDescriptor::default());
+        let shadow_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+            label: Some("PCF Comparison Shadow Sampler"),
+            address_mode_u: wgpu::AddressMode::ClampToEdge,
+            address_mode_v: wgpu::AddressMode::ClampToEdge,
+            address_mode_w: wgpu::AddressMode::ClampToEdge,
+            mag_filter: wgpu::FilterMode::Linear,
+            min_filter: wgpu::FilterMode::Linear,
+            mipmap_filter: wgpu::FilterMode::Nearest,
+            compare: Some(wgpu::CompareFunction::LessEqual),
+            ..Default::default()
+        });
+
+        // Group 0: Scene Uniforms (shared across Shadow Pass and Forward Pass)
+        let uniform_bind_group_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("SceneUniforms Group(0) Layout"),
+                entries: &[wgpu::BindGroupLayoutEntry {
                     binding: 0,
                     visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
                     ty: wgpu::BindingType::Buffer {
@@ -568,55 +684,157 @@ impl GpuRenderer {
                         min_binding_size: None,
                     },
                     count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 1,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Texture {
-                        multisampled: false,
-                        view_dimension: wgpu::TextureViewDimension::D2,
-                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                    },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 2,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
-                    count: None,
-                },
-            ],
-        });
+                }],
+            });
 
         let uniform_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("SceneUniforms BindGroup"),
-            layout: &bind_group_layout,
+            label: Some("SceneUniforms Group(0) BindGroup"),
+            layout: &uniform_bind_group_layout,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: uniform_buffer.as_entire_binding(),
+            }],
+        });
+
+        // Group 1: Material & Texture Resources (Hero Sprite, FoW, and Shadow Map)
+        let material_bind_group_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("Material Group(1) Layout"),
+                entries: &[
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 0,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Texture {
+                            multisampled: false,
+                            view_dimension: wgpu::TextureViewDimension::D2,
+                            sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        },
+                        count: None,
+                    },
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 1,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                        count: None,
+                    },
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 2,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Texture {
+                            multisampled: false,
+                            view_dimension: wgpu::TextureViewDimension::D2,
+                            sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        },
+                        count: None,
+                    },
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 3,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                        count: None,
+                    },
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 4,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Texture {
+                            multisampled: false,
+                            view_dimension: wgpu::TextureViewDimension::D2,
+                            sample_type: wgpu::TextureSampleType::Depth,
+                        },
+                        count: None,
+                    },
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 5,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Comparison),
+                        count: None,
+                    },
+                ],
+            });
+
+        let material_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("Material Group(1) BindGroup"),
+            layout: &material_bind_group_layout,
             entries: &[
                 wgpu::BindGroupEntry {
                     binding: 0,
-                    resource: uniform_buffer.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
                     resource: wgpu::BindingResource::TextureView(&sheet_view),
                 },
                 wgpu::BindGroupEntry {
-                    binding: 2,
+                    binding: 1,
                     resource: wgpu::BindingResource::Sampler(&pixel_sampler),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: wgpu::BindingResource::TextureView(&fow_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: wgpu::BindingResource::Sampler(&fow_sampler),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 4,
+                    resource: wgpu::BindingResource::TextureView(&shadow_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 5,
+                    resource: wgpu::BindingResource::Sampler(&shadow_sampler),
                 },
             ],
         });
 
-        let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("Saan HD-2D Pipeline Layout"),
-            bind_group_layouts: &[&bind_group_layout],
-            push_constant_ranges: &[],
+        // Pipeline Layout for Pass 1 (Shadow Pass only needs Group 0 Uniforms)
+        let shadow_pipeline_layout =
+            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("Saan Shadow Pipeline Layout"),
+                bind_group_layouts: &[&uniform_bind_group_layout],
+                push_constant_ranges: &[],
+            });
+
+        // Pipeline Layout for Pass 2 & 3 (Forward Pass needs Group 0 Uniforms + Group 1 Textures)
+        let forward_pipeline_layout =
+            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("Saan HD-2D Forward Pipeline Layout"),
+                bind_group_layouts: &[&uniform_bind_group_layout, &material_bind_group_layout],
+                push_constant_ranges: &[],
+            });
+
+        // Pass 1: Hardware Directional Shadow Pass Pipeline
+        let shadow_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("1_ShadowMapPass Pipeline"),
+            layout: Some(&shadow_pipeline_layout),
+            vertex: wgpu::VertexState {
+                module: &shader,
+                entry_point: Some("vs_shadow"),
+                buffers: &[InterlacedVertex::layout()],
+                compilation_options: Default::default(),
+            },
+            fragment: None,
+            primitive: wgpu::PrimitiveState {
+                topology: wgpu::PrimitiveTopology::TriangleList,
+                cull_mode: None,
+                ..Default::default()
+            },
+            depth_stencil: Some(wgpu::DepthStencilState {
+                format: Self::DEPTH_FORMAT,
+                depth_write_enabled: true,
+                depth_compare: wgpu::CompareFunction::LessEqual,
+                stencil: wgpu::StencilState::default(),
+                bias: wgpu::DepthBiasState {
+                    constant: 2,
+                    slope_scale: 2.0,
+                    clamp: 0.0,
+                },
+            }),
+            multisample: wgpu::MultisampleState::default(),
+            multiview: None,
+            cache: None,
         });
 
         // Pass 2: Opaque 3D Mesh Pipeline (depth write ON, cull backfaces)
         let opaque_3d_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("2_OpaqueMesh3DPass Pipeline"),
-            layout: Some(&pipeline_layout),
+            layout: Some(&forward_pipeline_layout),
             vertex: wgpu::VertexState {
                 module: &shader,
                 entry_point: Some("vs_main"),
@@ -654,7 +872,7 @@ impl GpuRenderer {
         let interlace_25d_pipeline =
             device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
                 label: Some("3_Sprite25DInterlacePass Pipeline"),
-                layout: Some(&pipeline_layout),
+                layout: Some(&forward_pipeline_layout),
                 vertex: wgpu::VertexState {
                     module: &shader,
                     entry_point: Some("vs_main"),
@@ -696,8 +914,13 @@ impl GpuRenderer {
             depth_view,
             uniform_buffer,
             uniform_bind_group,
+            material_bind_group,
             opaque_3d_pipeline,
             interlace_25d_pipeline,
+            shadow_texture,
+            shadow_view,
+            shadow_pipeline,
+            fow_texture,
         })
     }
 
@@ -742,6 +965,32 @@ impl GpuRenderer {
         self.queue
             .write_buffer(&self.uniform_buffer, 0, bytemuck::bytes_of(&uniforms));
 
+        // 1. Write dynamic Fog of War visibility cells to 2D texture
+        let fow_bytes = if let Some(ref fow) = frame.fog_of_war {
+            fow.cells.clone()
+        } else {
+            vec![255u8; 64 * 64]
+        };
+        self.queue.write_texture(
+            wgpu::ImageCopyTexture {
+                texture: &self.fow_texture,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            &fow_bytes,
+            wgpu::ImageDataLayout {
+                offset: 0,
+                bytes_per_row: Some(64),
+                rows_per_image: Some(64),
+            },
+            wgpu::Extent3d {
+                width: 64,
+                height: 64,
+                depth_or_array_layers: 1,
+            },
+        );
+
         let (mesh_verts, sprite_verts) = tessellate_frame(frame);
 
         let mesh_vb = (!mesh_verts.is_empty()).then(|| {
@@ -768,9 +1017,40 @@ impl GpuRenderer {
                 label: Some("Saan Frame Command Encoder"),
             });
 
+        // Pass 1: Directional Shadow Pass to 2048x2048 depth texture
+        {
+            let mut spass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("1_ShadowMapPass"),
+                color_attachments: &[],
+                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                    view: &self.shadow_view,
+                    depth_ops: Some(wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(1.0),
+                        store: wgpu::StoreOp::Store,
+                    }),
+                    stencil_ops: None,
+                }),
+                timestamp_writes: None,
+                occlusion_query_set: None,
+            });
+
+            spass.set_bind_group(0, &self.uniform_bind_group, &[]);
+            spass.set_pipeline(&self.shadow_pipeline);
+
+            if let Some(ref vb) = mesh_vb {
+                spass.set_vertex_buffer(0, vb.slice(..));
+                spass.draw(0..mesh_verts.len() as u32, 0..1);
+            }
+            if let Some(ref vb) = sprite_vb {
+                spass.set_vertex_buffer(0, vb.slice(..));
+                spass.draw(0..sprite_verts.len() as u32, 0..1);
+            }
+        }
+
+        // Pass 2 & 3: Main Forward Pass with 3D Opaque + 2.5D Interlace
         {
             let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("Saan HD-2D Unified Depth Pass"),
+                label: Some("Saan HD-2D Unified Forward Pass"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                     view: &view,
                     resolve_target: None,
@@ -797,6 +1077,7 @@ impl GpuRenderer {
             });
 
             rpass.set_bind_group(0, &self.uniform_bind_group, &[]);
+            rpass.set_bind_group(1, &self.material_bind_group, &[]);
 
             // Pass 2: Draw 3D Opaque Geometry
             if let Some(ref vb) = mesh_vb {
@@ -805,7 +1086,7 @@ impl GpuRenderer {
                 rpass.draw(0..mesh_verts.len() as u32, 0..1);
             }
 
-            // Pass 1 (ground shadows) + Pass 3 (depth-sorted 2.5D sprites) + Pass 4 (Diorama DOF shader)
+            // Pass 3: 2.5D Sprites, Particles & Inspector HUD
             if let Some(ref vb) = sprite_vb {
                 rpass.set_pipeline(&self.interlace_25d_pipeline);
                 rpass.set_vertex_buffer(0, vb.slice(..));

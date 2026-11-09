@@ -7,8 +7,8 @@ use thiserror::Error;
 
 use crate::ecs::World;
 use crate::strands::{
-    AudioEmitter3D, CameraRig, EventWeftStrand, FlipbookStrand, GameplayEvent, InputStrand,
-    NameStrand, Sprite25D, Transform, Velocity,
+    AudioEmitter3D, CameraRig, EventWeftStrand, FlipbookStrand, FogOfWarStrand, GameplayEvent,
+    InputStrand, NameStrand, ParticleEmitter3D, Sprite25D, Transform, Velocity,
 };
 
 /// A system ("Weft thread") that weaves through matching strands in the [`World`] each frame.
@@ -109,7 +109,22 @@ impl Loom {
             .expect("Failed to order velocity_kinematics -> positional_audio_3d");
         loom.add_ordering("camera_orbit_input", "positional_audio_3d")
             .expect("Failed to order camera_orbit_input -> positional_audio_3d");
+
+        loom.add_system(ParticleSimulationWeftSystem)
+            .expect("Failed to register ParticleSimulationWeftSystem");
+        loom.add_system(FogOfWarWeftSystem)
+            .expect("Failed to register FogOfWarWeftSystem");
+        loom.add_ordering("velocity_kinematics", "particle_simulation_weft")
+            .expect("Failed to order velocity_kinematics -> particle_simulation_weft");
+        loom.add_ordering("velocity_kinematics", "fog_of_war_update")
+            .expect("Failed to order velocity_kinematics -> fog_of_war_update");
+
         loom
+    }
+
+    /// Returns true if a system with `name` is already registered on the Loom DAG.
+    pub fn has_system(&self, name: &str) -> bool {
+        self.nodes_by_name.contains_key(name)
     }
 
     /// Adds a [`WeftSystem`] node to the Loom DAG.
@@ -432,6 +447,80 @@ impl WeftSystem for PositionalAudioWeftSystem {
                     sound_id,
                     stereo_gain: gain,
                 });
+            }
+        }
+    }
+}
+
+/// Weft system that simulates and steps 3D particle emitters over time.
+pub struct ParticleSimulationWeftSystem;
+
+impl WeftSystem for ParticleSimulationWeftSystem {
+    fn name(&self) -> &'static str {
+        "particle_simulation_weft"
+    }
+
+    fn reads(&self) -> &[&'static str] {
+        &["Transform"]
+    }
+
+    fn writes(&self) -> &[&'static str] {
+        &["ParticleEmitter3D"]
+    }
+
+    fn weave(&mut self, world: &mut World, dt: f32) {
+        let mut updates = Vec::new();
+        for (entity, emitter) in world.query::<ParticleEmitter3D>() {
+            let origin = world
+                .get_strand::<Transform>(entity)
+                .map(|t| t.translation)
+                .unwrap_or(glam::Vec3::ZERO);
+            let mut emitter_clone = emitter.clone();
+            emitter_clone.step(origin, dt);
+            updates.push((entity, emitter_clone));
+        }
+
+        for (entity, updated) in updates {
+            if let Some(emitter) = world.get_strand_mut::<ParticleEmitter3D>(entity) {
+                *emitter = updated;
+            }
+        }
+    }
+}
+
+/// Weft system that updates the Fog of War visibility grid based on actors with vision.
+pub struct FogOfWarWeftSystem;
+
+impl WeftSystem for FogOfWarWeftSystem {
+    fn name(&self) -> &'static str {
+        "fog_of_war_update"
+    }
+
+    fn reads(&self) -> &[&'static str] {
+        &["Transform"]
+    }
+
+    fn writes(&self) -> &[&'static str] {
+        &["FogOfWarStrand"]
+    }
+
+    fn weave(&mut self, world: &mut World, _dt: f32) {
+        let fow_entity = match world.query::<FogOfWarStrand>().next() {
+            Some((e, _)) => e,
+            None => return,
+        };
+
+        let mut vision_sources = Vec::new();
+        for (entity, transform) in world.query::<Transform>() {
+            if entity != fow_entity {
+                vision_sources.push((transform.translation.x, transform.translation.z, 6.0f32));
+            }
+        }
+
+        if let Some(fow) = world.get_strand_mut::<FogOfWarStrand>(fow_entity) {
+            fow.shroud_visible();
+            for (x, z, r) in vision_sources {
+                fow.reveal_circle(x, z, r);
             }
         }
     }

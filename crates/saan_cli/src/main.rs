@@ -27,6 +27,9 @@ enum Commands {
         /// Overwrite existing scene file if present
         #[arg(long)]
         force: bool,
+        /// Scene template ("diorama_sandbox" or "default")
+        #[arg(long, default_value = "diorama_sandbox")]
+        template: String,
     },
     /// Inspect a .saan scene pattern and check Loom + Render Graph tension
     Inspect {
@@ -61,6 +64,21 @@ enum Commands {
         #[arg(long)]
         max_frames: Option<u32>,
     },
+    /// Launch the interactive Saan Craft Editor (hierarchy, strand inspector, tile brush, .saan save)
+    Edit {
+        /// Path to the .saan scene pattern file (if missing, loads the default HD-2D Diorama scene)
+        #[arg(default_value = "scene.saan")]
+        scene: PathBuf,
+        /// Window width in logical pixels
+        #[arg(long, default_value_t = 1280)]
+        width: u32,
+        /// Window height in logical pixels
+        #[arg(long, default_value_t = 720)]
+        height: u32,
+        /// Optional maximum number of rendered frames before auto-closing (useful for verification)
+        #[arg(long)]
+        max_frames: Option<u32>,
+    },
 }
 
 fn resolve_scene_path(path: PathBuf) -> PathBuf {
@@ -75,7 +93,11 @@ fn main() -> Result<()> {
     let cli = Cli::parse();
 
     match cli.command {
-        Commands::Init { path, force } => {
+        Commands::Init {
+            path,
+            force,
+            template,
+        } => {
             let scene_path = resolve_scene_path(path);
             if scene_path.exists() && !force {
                 bail!(
@@ -91,7 +113,11 @@ fn main() -> Result<()> {
                 .filter(|s| !s.is_empty())
                 .unwrap_or("Saan HD-2D Diorama");
 
-            let pattern = ScenePattern::default_hd2d_diorama(title);
+            let pattern = if template == "default" {
+                ScenePattern::default_hd2d_diorama(title)
+            } else {
+                ScenePattern::diorama_sandbox(title)
+            };
             pattern
                 .save_to_file(&scene_path)
                 .with_context(|| format!("Failed to write scene to {}", scene_path.display()))?;
@@ -114,6 +140,8 @@ fn main() -> Result<()> {
 
             let mut loom = Loom::with_default_gameplay();
             saan_spatial::register_spatial_systems(&mut loom)?;
+            saan_script::register_scripting_systems(&mut loom)?;
+            saan_audio::register_audio_systems(&mut loom)?;
             let tension = loom.inspect_tension();
             let render_loom = RenderLoom::hd2d_pipeline();
             let frame = render_loom.extract_frame(&world);
@@ -129,6 +157,12 @@ fn main() -> Result<()> {
             println!("  - Taut (Valid):     {}", tension.is_taut());
             println!("  - Systems:          {:?}", tension.execution_order);
             println!("  - Hazards:          {}", tension.hazards.len());
+            for h in &tension.hazards {
+                println!(
+                    "    * {:?}: {} <-> {} on strand '{}'",
+                    h.kind, h.system_a, h.system_b, h.strand
+                );
+            }
 
             println!("\n2.5D + 3D Render Loom Schedule:");
             for pass in &frame.pass_order {
@@ -162,6 +196,8 @@ fn main() -> Result<()> {
 
             let mut loom = Loom::with_default_gameplay();
             saan_spatial::register_spatial_systems(&mut loom)?;
+            saan_script::register_scripting_systems(&mut loom)?;
+            saan_audio::register_audio_systems(&mut loom)?;
             let render_loom = RenderLoom::hd2d_pipeline();
 
             for frame_idx in 1..=frames {
@@ -223,6 +259,39 @@ fn main() -> Result<()> {
                     height,
                     max_frames,
                     watch_path,
+                },
+            )?;
+        }
+
+        Commands::Edit {
+            scene,
+            width,
+            height,
+            max_frames,
+        } => {
+            let scene_path = resolve_scene_path(scene);
+            let pattern = if scene_path.exists() {
+                ScenePattern::load_from_file(&scene_path)
+                    .with_context(|| format!("Failed to load scene '{}'", scene_path.display()))?
+            } else {
+                println!(
+                    "No '{}' found; creating default HD-2D Diorama scene for editor...",
+                    scene_path.display()
+                );
+                ScenePattern::default_hd2d_diorama("Saan HD-2D Diorama")
+            };
+
+            println!("Launching Saan Craft Editor: '{}'", pattern.title);
+            println!("Tools: [Tab] Cycle Tool | [T] Cycle Tile Brush | [P] Paint Tile | [1..3] Spawn Prefab");
+            println!("Entity: [I/J/K/L] Translate Selected | [Space] Play/Pause Sim | [S] Save Scene | [Esc] Quit");
+
+            saan_editor::run_editor(
+                pattern,
+                saan_editor::EditorOptions {
+                    width,
+                    height,
+                    scene_path: Some(scene_path),
+                    max_frames,
                 },
             )?;
         }

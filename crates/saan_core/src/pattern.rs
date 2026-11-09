@@ -8,8 +8,9 @@ use serde::{Deserialize, Serialize};
 use crate::ecs::{EntityId, World};
 use crate::strands::{
     AudioEmitter3D, BillboardMode, CameraProjection, CameraRig, Collider3D, ColliderShape,
-    DirectionalLight, EventWeftStrand, FlipbookStrand, Material3D, Mesh3D, MeshPrimitive,
-    NameStrand, PointLight, ScriptStrand, Sprite25D, Transform, Velocity,
+    DirectionalLight, EventWeftStrand, FlipbookStrand, FogOfWarStrand, Material3D, Mesh3D,
+    MeshPrimitive, NameStrand, ParticleEmitter3D, PointLight, ScriptStrand, Sprite25D, Transform,
+    Velocity,
 };
 
 /// Serializable blueprint of a single entity and its interwoven 2.5D/3D strands.
@@ -37,6 +38,10 @@ pub struct EntityBlueprint {
     pub audio_emitter: Option<AudioEmitter3D>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub script: Option<ScriptStrand>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fog_of_war: Option<FogOfWarStrand>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub particle_emitter: Option<ParticleEmitter3D>,
 }
 
 /// A `.saan` Scene Pattern describing an entire hybrid 2.5D + 3D diorama world.
@@ -81,6 +86,8 @@ impl ScenePattern {
                     point_light: None,
                     audio_emitter: None,
                     script: None,
+                    fog_of_war: None,
+                    particle_emitter: None,
                 },
                 EntityBlueprint {
                     name: "evening_sun".to_string(),
@@ -100,6 +107,8 @@ impl ScenePattern {
                     point_light: None,
                     audio_emitter: None,
                     script: None,
+                    fog_of_war: None,
+                    particle_emitter: None,
                 },
                 EntityBlueprint {
                     name: "mossy_courtyard_ground".to_string(),
@@ -134,6 +143,8 @@ impl ScenePattern {
                     point_light: None,
                     audio_emitter: None,
                     script: None,
+                    fog_of_war: Some(FogOfWarStrand::default_diorama()),
+                    particle_emitter: None,
                 },
                 EntityBlueprint {
                     name: "stone_altar_3d".to_string(),
@@ -167,6 +178,8 @@ impl ScenePattern {
                     point_light: None,
                     audio_emitter: None,
                     script: None,
+                    fog_of_war: None,
+                    particle_emitter: None,
                 },
                 EntityBlueprint {
                     name: "wanderer_hero_25d".to_string(),
@@ -230,6 +243,8 @@ impl ScenePattern {
                         "#.to_string()),
                         enabled: true,
                     }),
+                    fog_of_war: None,
+                    particle_emitter: None,
                 },
                 EntityBlueprint {
                     name: "banyan_tree_canopy_25d".to_string(),
@@ -268,6 +283,8 @@ impl ScenePattern {
                         current_stereo_gain: [0.0, 0.0],
                     }),
                     script: None,
+                    fog_of_war: None,
+                    particle_emitter: None,
                 },
                 EntityBlueprint {
                     name: "spirit_lantern_25d".to_string(),
@@ -303,6 +320,385 @@ impl ScenePattern {
                         current_stereo_gain: [0.0, 0.0],
                     }),
                     script: None,
+                    fog_of_war: None,
+                    particle_emitter: Some(ParticleEmitter3D::spirit_wisps()),
+                },
+            ],
+        }
+    }
+
+    /// Creates the complete, playable Unified Diorama Sandbox scene.
+    ///
+    /// Interweaves all Saan engine capabilities:
+    /// - Hero action unit with WASD movement and flipbook walking animation.
+    /// - RTS squad units with selection and flow-field navigation.
+    /// - Multi-height elevated stone ruins with stair/ledge step-up collision.
+    /// - Dynamic Fog of War visibility grid with exploration clearing.
+    /// - Directional evening sun casting hardware depth shadow maps with 4-tap PCF.
+    /// - Glowing ancient spirit shrine with 3D particle emitter wisps and point lighting.
+    /// - Embedded Rhai gameplay scripts and 3D spatial audio emitters.
+    pub fn diorama_sandbox(title: impl Into<String>) -> Self {
+        Self {
+            version: 1,
+            title: title.into(),
+            description: "Unified 2.5D + 3D Diorama Sandbox combining Hero Action, RTS squads, TBS ruins, Fog of War, and Directional Shadows.".to_string(),
+            entities: vec![
+                EntityBlueprint {
+                    name: "diorama_cinematic_camera".to_string(),
+                    transform: Transform::from_xyz(0.0, 9.5, 14.0),
+                    velocity: None,
+                    collider_3d: None,
+                    sprite_25d: None,
+                    flipbook: None,
+                    mesh_3d: None,
+                    camera: Some(CameraRig {
+                        eye: Vec3::new(0.0, 9.5, 14.0),
+                        target: Vec3::new(0.0, 1.0, 0.0),
+                        up: Vec3::Y,
+                        aspect_ratio: 16.0 / 9.0,
+                        near: 0.1,
+                        far: 150.0,
+                        projection: CameraProjection::DioramaTilt {
+                            fov_y_degrees: 34.0,
+                            focus_distance: 14.5,
+                            aperture_blur: 0.75,
+                        },
+                    }),
+                    directional_light: None,
+                    point_light: None,
+                    audio_emitter: None,
+                    script: None,
+                    fog_of_war: None,
+                    particle_emitter: None,
+                },
+                EntityBlueprint {
+                    name: "evening_sun_shadow_caster".to_string(),
+                    transform: Transform::from_xyz(12.0, 24.0, 10.0),
+                    velocity: None,
+                    collider_3d: None,
+                    sprite_25d: None,
+                    flipbook: None,
+                    mesh_3d: None,
+                    camera: None,
+                    directional_light: Some(DirectionalLight {
+                        direction: Vec3::new(-0.45, -0.85, -0.3).normalize(),
+                        color: Vec3::new(1.0, 0.86, 0.70),
+                        intensity: 2.4,
+                        casts_shadows: true,
+                    }),
+                    point_light: None,
+                    audio_emitter: None,
+                    script: None,
+                    fog_of_war: None,
+                    particle_emitter: None,
+                },
+                EntityBlueprint {
+                    name: "temple_courtyard_ground".to_string(),
+                    transform: Transform::from_xyz(0.0, 0.0, 0.0),
+                    velocity: None,
+                    collider_3d: Some(Collider3D {
+                        shape: ColliderShape::Aabb3D {
+                            half_extents: Vec3::new(16.0, 0.1, 16.0),
+                        },
+                        is_static: true,
+                        max_step_height: 0.0,
+                        fade_when_occluding_camera: false,
+                    }),
+                    sprite_25d: None,
+                    flipbook: None,
+                    mesh_3d: Some(Mesh3D {
+                        primitive: MeshPrimitive::GroundPlane {
+                            width: 32.0,
+                            depth: 32.0,
+                        },
+                        material: Material3D {
+                            name: "ancient_moss_flagstone".to_string(),
+                            base_color: Vec4::new(0.26, 0.34, 0.24, 1.0),
+                            roughness: 0.88,
+                            metallic: 0.02,
+                        },
+                        casts_shadow: false,
+                        receives_shadow: true,
+                    }),
+                    camera: None,
+                    directional_light: None,
+                    point_light: None,
+                    audio_emitter: None,
+                    script: None,
+                    fog_of_war: Some(FogOfWarStrand::new(64, 64, Vec2::new(-16.0, -16.0), Vec2::new(16.0, 16.0))),
+                    particle_emitter: None,
+                },
+                EntityBlueprint {
+                    name: "elevated_ruins_plateau".to_string(),
+                    transform: Transform::from_xyz(4.5, 1.0, -3.5),
+                    velocity: None,
+                    collider_3d: Some(Collider3D {
+                        shape: ColliderShape::Aabb3D {
+                            half_extents: Vec3::new(3.5, 1.0, 3.5),
+                        },
+                        is_static: true,
+                        max_step_height: 0.0,
+                        fade_when_occluding_camera: true,
+                    }),
+                    sprite_25d: None,
+                    flipbook: None,
+                    mesh_3d: Some(Mesh3D {
+                        primitive: MeshPrimitive::Cube {
+                            size: Vec3::new(7.0, 2.0, 7.0),
+                        },
+                        material: Material3D {
+                            name: "carved_laterite_shrine".to_string(),
+                            base_color: Vec4::new(0.52, 0.32, 0.22, 1.0),
+                            roughness: 0.92,
+                            metallic: 0.05,
+                        },
+                        casts_shadow: true,
+                        receives_shadow: true,
+                    }),
+                    camera: None,
+                    directional_light: None,
+                    point_light: None,
+                    audio_emitter: None,
+                    script: None,
+                    fog_of_war: None,
+                    particle_emitter: None,
+                },
+                EntityBlueprint {
+                    name: "ancient_spirit_shrine".to_string(),
+                    transform: Transform::from_xyz(4.5, 2.6, -3.5),
+                    velocity: None,
+                    collider_3d: None,
+                    sprite_25d: Some(Sprite25D {
+                        texture_id: "sprites/spirit_wisp.png".to_string(),
+                        size: Vec2::new(1.0, 1.0),
+                        pivot: Vec2::new(0.5, 0.5),
+                        billboard: BillboardMode::Spherical,
+                        normal_map_id: None,
+                        casts_shadow: false,
+                        tint: Vec4::new(0.4, 0.85, 1.0, 0.98),
+                        depth_bias: 0.02,
+                        uv_rect: [0.0, 0.0, 1.0, 1.0],
+                    }),
+                    flipbook: None,
+                    mesh_3d: None,
+                    camera: None,
+                    directional_light: None,
+                    point_light: Some(PointLight {
+                        color: Vec3::new(0.35, 0.75, 1.0),
+                        intensity: 6.0,
+                        radius: 8.5,
+                    }),
+                    audio_emitter: Some(AudioEmitter3D {
+                        sound_id: "audio/spirit_lantern_chime.ogg".to_string(),
+                        base_volume: 0.95,
+                        max_distance: 22.0,
+                        looping: true,
+                        current_stereo_gain: [0.0, 0.0],
+                    }),
+                    script: Some(ScriptStrand {
+                        script_path: "scripts/shrine_trigger.rhai".to_string(),
+                        inline_source: Some(r#"
+                            fn on_tick(dt) {
+                                // Pulsing aura oscillation
+                                if pos.y > 2.8 {
+                                    vel.y = -0.15;
+                                } else if pos.y < 2.4 {
+                                    vel.y = 0.15;
+                                }
+                            }
+                        "#.to_string()),
+                        enabled: true,
+                    }),
+                    fog_of_war: None,
+                    particle_emitter: Some(ParticleEmitter3D::spirit_wisps()),
+                },
+                EntityBlueprint {
+                    name: "hero_wanderer_action".to_string(),
+                    transform: Transform::from_xyz(0.0, 0.0, 2.0),
+                    velocity: Some(Velocity {
+                        linear: Vec3::new(0.0, 0.0, 0.0),
+                        angular_y: 0.0,
+                    }),
+                    collider_3d: Some(Collider3D {
+                        shape: ColliderShape::CylinderY {
+                            radius: 0.45,
+                            height: 1.8,
+                        },
+                        is_static: false,
+                        max_step_height: 0.5,
+                        fade_when_occluding_camera: false,
+                    }),
+                    sprite_25d: Some(Sprite25D {
+                        texture_id: "sprites/wanderer_walk_sheet.png".to_string(),
+                        size: Vec2::new(1.3, 1.9),
+                        pivot: Vec2::new(0.5, 0.0),
+                        billboard: BillboardMode::CylindricalY,
+                        normal_map_id: Some("sprites/wanderer_walk_n.png".to_string()),
+                        casts_shadow: true,
+                        tint: Vec4::ONE,
+                        depth_bias: 0.0,
+                        uv_rect: [0.0, 0.0, 0.25, 1.0],
+                    }),
+                    flipbook: Some(FlipbookStrand {
+                        columns: 4,
+                        rows: 1,
+                        start_frame: 0,
+                        end_frame: 3,
+                        fps: 6.0,
+                        current_frame: 0,
+                        timer: 0.0,
+                        looping: true,
+                    }),
+                    mesh_3d: None,
+                    camera: None,
+                    directional_light: None,
+                    point_light: None,
+                    audio_emitter: Some(AudioEmitter3D {
+                        sound_id: "audio/footsteps_moss.ogg".to_string(),
+                        base_volume: 0.7,
+                        max_distance: 18.0,
+                        looping: true,
+                        current_stereo_gain: [0.0, 0.0],
+                    }),
+                    script: Some(ScriptStrand {
+                        script_path: "scripts/hero_controller.rhai".to_string(),
+                        inline_source: Some(r#"
+                            fn on_tick(dt) {
+                                // Patrol or responsive velocity dampening
+                                vel.x = vel.x * 0.92;
+                                vel.z = vel.z * 0.92;
+                            }
+                        "#.to_string()),
+                        enabled: true,
+                    }),
+                    fog_of_war: None,
+                    particle_emitter: None,
+                },
+                EntityBlueprint {
+                    name: "rts_squad_unit_1".to_string(),
+                    transform: Transform::from_xyz(-3.0, 0.0, 3.5),
+                    velocity: Some(Velocity::default()),
+                    collider_3d: Some(Collider3D {
+                        shape: ColliderShape::CylinderY {
+                            radius: 0.4,
+                            height: 1.6,
+                        },
+                        is_static: false,
+                        max_step_height: 0.4,
+                        fade_when_occluding_camera: false,
+                    }),
+                    sprite_25d: Some(Sprite25D {
+                        texture_id: "sprites/wanderer_walk_sheet.png".to_string(),
+                        size: Vec2::new(1.1, 1.6),
+                        pivot: Vec2::new(0.5, 0.0),
+                        billboard: BillboardMode::CylindricalY,
+                        normal_map_id: Some("sprites/wanderer_walk_n.png".to_string()),
+                        casts_shadow: true,
+                        tint: Vec4::new(0.75, 0.9, 1.0, 1.0),
+                        depth_bias: 0.0,
+                        uv_rect: [0.0, 0.0, 0.25, 1.0],
+                    }),
+                    flipbook: Some(FlipbookStrand {
+                        columns: 4,
+                        rows: 1,
+                        start_frame: 0,
+                        end_frame: 3,
+                        fps: 5.0,
+                        current_frame: 0,
+                        timer: 0.0,
+                        looping: true,
+                    }),
+                    mesh_3d: None,
+                    camera: None,
+                    directional_light: None,
+                    point_light: None,
+                    audio_emitter: None,
+                    script: None,
+                    fog_of_war: None,
+                    particle_emitter: None,
+                },
+                EntityBlueprint {
+                    name: "rts_squad_unit_2".to_string(),
+                    transform: Transform::from_xyz(-4.5, 0.0, 4.0),
+                    velocity: Some(Velocity::default()),
+                    collider_3d: Some(Collider3D {
+                        shape: ColliderShape::CylinderY {
+                            radius: 0.4,
+                            height: 1.6,
+                        },
+                        is_static: false,
+                        max_step_height: 0.4,
+                        fade_when_occluding_camera: false,
+                    }),
+                    sprite_25d: Some(Sprite25D {
+                        texture_id: "sprites/wanderer_walk_sheet.png".to_string(),
+                        size: Vec2::new(1.1, 1.6),
+                        pivot: Vec2::new(0.5, 0.0),
+                        billboard: BillboardMode::CylindricalY,
+                        normal_map_id: Some("sprites/wanderer_walk_n.png".to_string()),
+                        casts_shadow: true,
+                        tint: Vec4::new(0.75, 0.9, 1.0, 1.0),
+                        depth_bias: 0.0,
+                        uv_rect: [0.0, 0.0, 0.25, 1.0],
+                    }),
+                    flipbook: Some(FlipbookStrand {
+                        columns: 4,
+                        rows: 1,
+                        start_frame: 0,
+                        end_frame: 3,
+                        fps: 5.0,
+                        current_frame: 0,
+                        timer: 0.0,
+                        looping: true,
+                    }),
+                    mesh_3d: None,
+                    camera: None,
+                    directional_light: None,
+                    point_light: None,
+                    audio_emitter: None,
+                    script: None,
+                    fog_of_war: None,
+                    particle_emitter: None,
+                },
+                EntityBlueprint {
+                    name: "banyan_guardian_tree".to_string(),
+                    transform: Transform::from_xyz(-5.5, 0.0, -2.5),
+                    velocity: None,
+                    collider_3d: Some(Collider3D {
+                        shape: ColliderShape::CylinderY {
+                            radius: 0.8,
+                            height: 4.8,
+                        },
+                        is_static: true,
+                        max_step_height: 0.0,
+                        fade_when_occluding_camera: true,
+                    }),
+                    sprite_25d: Some(Sprite25D {
+                        texture_id: "sprites/banyan_tree.png".to_string(),
+                        size: Vec2::new(4.2, 5.0),
+                        pivot: Vec2::new(0.5, 0.0),
+                        billboard: BillboardMode::CylindricalY,
+                        normal_map_id: Some("sprites/banyan_tree_n.png".to_string()),
+                        casts_shadow: true,
+                        tint: Vec4::ONE,
+                        depth_bias: 0.0,
+                        uv_rect: [0.0, 0.0, 1.0, 1.0],
+                    }),
+                    flipbook: None,
+                    mesh_3d: None,
+                    camera: None,
+                    directional_light: None,
+                    point_light: None,
+                    audio_emitter: Some(AudioEmitter3D {
+                        sound_id: "audio/banyan_wind_leaves.ogg".to_string(),
+                        base_volume: 0.6,
+                        max_distance: 25.0,
+                        looping: true,
+                        current_stereo_gain: [0.0, 0.0],
+                    }),
+                    script: None,
+                    fog_of_war: None,
+                    particle_emitter: None,
                 },
             ],
         }
@@ -325,6 +721,60 @@ impl ScenePattern {
         let raw = fs::read_to_string(path)?;
         serde_json::from_str(&raw)
             .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))
+    }
+
+    /// Extracts a serializable [`ScenePattern`] from the live [`World`] state.
+    pub fn extract_from_world(world: &World, title: impl Into<String>, description: impl Into<String>) -> Self {
+        let mut entities = Vec::new();
+
+        for (entity, transform) in world.query::<Transform>() {
+            let name = world
+                .get_strand::<NameStrand>(entity)
+                .map(|n| n.0.clone())
+                .unwrap_or_else(|| format!("entity_{entity}"));
+
+            // Skip internal engine singleton entities like the event bus
+            if name.starts_with("event_weft") || name.starts_with("__engine") {
+                continue;
+            }
+
+            let velocity = world.get_strand::<Velocity>(entity).copied();
+            let collider_3d = world.get_strand::<Collider3D>(entity).copied();
+            let sprite_25d = world.get_strand::<Sprite25D>(entity).cloned();
+            let flipbook = world.get_strand::<FlipbookStrand>(entity).cloned();
+            let mesh_3d = world.get_strand::<Mesh3D>(entity).cloned();
+            let camera = world.get_strand::<CameraRig>(entity).copied();
+            let directional_light = world.get_strand::<DirectionalLight>(entity).copied();
+            let point_light = world.get_strand::<PointLight>(entity).copied();
+            let audio_emitter = world.get_strand::<AudioEmitter3D>(entity).cloned();
+            let script = world.get_strand::<ScriptStrand>(entity).cloned();
+            let fog_of_war = world.get_strand::<FogOfWarStrand>(entity).cloned();
+            let particle_emitter = world.get_strand::<ParticleEmitter3D>(entity).cloned();
+
+            entities.push(EntityBlueprint {
+                name,
+                transform: *transform,
+                velocity,
+                collider_3d,
+                sprite_25d,
+                flipbook,
+                mesh_3d,
+                camera,
+                directional_light,
+                point_light,
+                audio_emitter,
+                script,
+                fog_of_war,
+                particle_emitter,
+            });
+        }
+
+        Self {
+            version: 1,
+            title: title.into(),
+            description: description.into(),
+            entities,
+        }
     }
 
     /// Hydrates this [`ScenePattern`] into a live [`World`], returning the spawned [`EntityId`]s.
@@ -365,6 +815,12 @@ impl ScenePattern {
             }
             if let Some(ref script) = bp.script {
                 world.weave_strand(entity, script.clone());
+            }
+            if let Some(ref fow) = bp.fog_of_war {
+                world.weave_strand(entity, fow.clone());
+            }
+            if let Some(ref particles) = bp.particle_emitter {
+                world.weave_strand(entity, particles.clone());
             }
             spawned.push(entity);
         }
@@ -447,5 +903,10 @@ mod tests {
         assert_eq!(world.query::<CameraRig>().count(), 1);
         assert_eq!(world.query::<AudioEmitter3D>().count(), 3);
         assert_eq!(world.query::<EventWeftStrand>().count(), 1);
+
+        // Test extracting back to ScenePattern
+        let extracted = ScenePattern::extract_from_world(&world, "Extracted Title", "Extracted Description");
+        assert_eq!(extracted.title, "Extracted Title");
+        assert_eq!(extracted.entities.len(), 7); // 7 user entities, excluding internal event bus
     }
 }

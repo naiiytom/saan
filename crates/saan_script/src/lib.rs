@@ -301,8 +301,12 @@ impl WeftSystem for ScriptingWeftSystem {
 /// Registers the Rhai scripting Weft system onto `loom` with proper dependency ordering.
 pub fn register_scripting_systems(loom: &mut Loom) -> Result<(), LoomError> {
     loom.add_system(ScriptingWeftSystem::new())?;
-    // Run scripting after input and before kinematics and collision
-    loom.add_ordering("camera_orbit_input", "rhai_scripting")?;
+    // Run scripting after commanding/input and before kinematics and collision
+    if loom.has_system("agent_commanding_weft") {
+        loom.add_ordering("agent_commanding_weft", "rhai_scripting")?;
+    } else if loom.has_system("camera_orbit_input") {
+        loom.add_ordering("camera_orbit_input", "rhai_scripting")?;
+    }
     loom.add_ordering("rhai_scripting", "velocity_kinematics")?;
     Ok(())
 }

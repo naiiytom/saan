@@ -13,8 +13,9 @@ use glam::{Mat4, Quat, Vec2, Vec3, Vec4};
 use petgraph::algo::toposort;
 use petgraph::graph::DiGraph;
 use saan_core::{
-    BillboardMode, CameraProjection, CameraRig, DirectionalLight, EntityId, InspectorStrand,
-    Mesh3D, MeshPrimitive, NameStrand, PointLight, Sprite25D, Transform, World,
+    BillboardMode, CameraProjection, CameraRig, DirectionalLight, EntityId, FogOfWarStrand,
+    InspectorStrand, Mesh3D, MeshPrimitive, NameStrand, ParticleData, ParticleEmitter3D,
+    PointLight, Sprite25D, Transform, World,
 };
 use serde::{Deserialize, Serialize};
 
@@ -70,6 +71,8 @@ pub struct RenderFrame {
     pub diorama_dof_enabled: bool,
     pub pass_order: Vec<String>,
     pub inspector: Option<InspectorStrand>,
+    pub particles: Vec<ParticleData>,
+    pub fog_of_war: Option<FogOfWarStrand>,
     pub entity_count: usize,
 }
 
@@ -240,6 +243,13 @@ impl RenderLoom {
         let diorama_dof_enabled = matches!(camera.projection, CameraProjection::DioramaTilt { .. });
         let inspector = world.query::<InspectorStrand>().next().map(|(_, s)| s.clone());
 
+        let mut particles = Vec::new();
+        for (_, emitter) in world.query::<ParticleEmitter3D>() {
+            particles.extend(emitter.particles.iter().cloned());
+        }
+
+        let fog_of_war = world.query::<FogOfWarStrand>().next().map(|(_, f)| f.clone());
+
         RenderFrame {
             camera,
             view_proj,
@@ -253,6 +263,8 @@ impl RenderLoom {
             diorama_dof_enabled,
             pass_order: self.pass_schedule(),
             inspector,
+            particles,
+            fog_of_war,
             entity_count: world.entity_count(),
         }
     }

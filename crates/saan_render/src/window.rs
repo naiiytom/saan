@@ -73,6 +73,8 @@ impl SaanApp {
 
         let mut loom = Loom::with_default_gameplay();
         let _ = saan_spatial::register_spatial_systems(&mut loom);
+        let _ = saan_script::register_scripting_systems(&mut loom);
+        let _ = saan_audio::register_audio_systems(&mut loom);
         let tension = loom.inspect_tension();
 
         let inspector_entity = world.spawn();
