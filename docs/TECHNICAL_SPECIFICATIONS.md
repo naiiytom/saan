@@ -69,7 +69,7 @@
 
 ## 4. Technology Stack
 
-- **Language:** Rust (2021 edition)
+- **Language:** Rust (2024 edition)
 - **Math:** `glam` (SIMD-accelerated vectors, quaternions, matrices)
 - **Graph & Scheduling:** `petgraph` (DAG topological sort, reachability, cycle & hazard detection)
 - **Serialization:** `serde` + `serde_json` (for `.saan` scene patterns and inspection telemetry)
