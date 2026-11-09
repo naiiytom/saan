@@ -2,6 +2,7 @@
 
 use bytemuck::{Pod, Zeroable};
 use glam::Vec3;
+use saan_asset::RgbaTexture;
 use saan_core::{CameraProjection, MeshPrimitive};
 use wgpu::util::DeviceExt;
 
@@ -121,36 +122,52 @@ fn push_quad(
     color: [f32; 4],
     kind: f32,
 ) {
+    push_quad_uv(out, p0, p1, p2, p3, [0.0, 0.0, 1.0, 1.0], normal, color, kind);
+}
+
+#[allow(clippy::too_many_arguments)]
+fn push_quad_uv(
+    out: &mut Vec<InterlacedVertex>,
+    p0: Vec3,
+    p1: Vec3,
+    p2: Vec3,
+    p3: Vec3,
+    uv_rect: [f32; 4],
+    normal: Vec3,
+    color: [f32; 4],
+    kind: f32,
+) {
+    let [u0, v0, u1, v1] = uv_rect;
     let n = normal.to_array();
-    let v0 = InterlacedVertex {
+    let v_bl = InterlacedVertex {
         world_pos: p0.to_array(),
         world_normal: n,
-        uv: [0.0, 1.0],
+        uv: [u0, v1],
         color,
         kind,
     };
-    let v1 = InterlacedVertex {
+    let v_br = InterlacedVertex {
         world_pos: p1.to_array(),
         world_normal: n,
-        uv: [1.0, 1.0],
+        uv: [u1, v1],
         color,
         kind,
     };
-    let v2 = InterlacedVertex {
+    let v_tr = InterlacedVertex {
         world_pos: p2.to_array(),
         world_normal: n,
-        uv: [1.0, 0.0],
+        uv: [u1, v0],
         color,
         kind,
     };
-    let v3 = InterlacedVertex {
+    let v_tl = InterlacedVertex {
         world_pos: p3.to_array(),
         world_normal: n,
-        uv: [0.0, 0.0],
+        uv: [u0, v0],
         color,
         kind,
     };
-    out.extend_from_slice(&[v0, v1, v2, v0, v2, v3]);
+    out.extend_from_slice(&[v_bl, v_br, v_tr, v_bl, v_tr, v_tl]);
 }
 
 fn append_mesh_primitive(out: &mut Vec<InterlacedVertex>, item: &MeshDrawItem) {
@@ -276,12 +293,13 @@ fn append_sprite_25d_quad(out: &mut Vec<InterlacedVertex>, sprite: &Sprite25DDra
         1.0
     };
 
-    push_quad(
+    push_quad_uv(
         out,
         p0,
         p1,
         p2,
         p3,
+        sprite.uv_rect,
         sprite.world_normal,
         sprite.tint.to_array(),
         kind,
@@ -382,27 +400,99 @@ impl GpuRenderer {
             mapped_at_creation: false,
         });
 
+        // Upload the 4-frame RGBA8 Wanderer Hero sprite sheet texture via saan_asset
+        let sheet_img = RgbaTexture::procedural_wanderer_sheet();
+        let sheet_size = wgpu::Extent3d {
+            width: sheet_img.width,
+            height: sheet_img.height,
+            depth_or_array_layers: 1,
+        };
+        let sheet_texture = device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("Wanderer Flipbook Sprite Sheet"),
+            size: sheet_size,
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Rgba8UnormSrgb,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+            view_formats: &[],
+        });
+        queue.write_texture(
+            wgpu::ImageCopyTexture {
+                texture: &sheet_texture,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            &sheet_img.pixels,
+            wgpu::ImageDataLayout {
+                offset: 0,
+                bytes_per_row: Some(4 * sheet_img.width),
+                rows_per_image: Some(sheet_img.height),
+            },
+            sheet_size,
+        );
+        let sheet_view = sheet_texture.create_view(&wgpu::TextureViewDescriptor::default());
+        let pixel_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+            label: Some("Crisp HD-2D Nearest Pixel Sampler"),
+            address_mode_u: wgpu::AddressMode::ClampToEdge,
+            address_mode_v: wgpu::AddressMode::ClampToEdge,
+            address_mode_w: wgpu::AddressMode::ClampToEdge,
+            mag_filter: wgpu::FilterMode::Nearest,
+            min_filter: wgpu::FilterMode::Nearest,
+            mipmap_filter: wgpu::FilterMode::Nearest,
+            ..Default::default()
+        });
+
         let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("SceneUniforms Layout"),
-            entries: &[wgpu::BindGroupLayoutEntry {
-                binding: 0,
-                visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
-                ty: wgpu::BindingType::Buffer {
-                    ty: wgpu::BufferBindingType::Uniform,
-                    has_dynamic_offset: false,
-                    min_binding_size: None,
+            label: Some("SceneUniforms + SpriteSheet Layout"),
+            entries: &[
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
                 },
-                count: None,
-            }],
+                wgpu::BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        multisampled: false,
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 2,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                    count: None,
+                },
+            ],
         });
 
         let uniform_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("SceneUniforms BindGroup"),
             layout: &bind_group_layout,
-            entries: &[wgpu::BindGroupEntry {
-                binding: 0,
-                resource: uniform_buffer.as_entire_binding(),
-            }],
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: uniform_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::TextureView(&sheet_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: wgpu::BindingResource::Sampler(&pixel_sampler),
+                },
+            ],
         });
 
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {

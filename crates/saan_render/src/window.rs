@@ -1,11 +1,12 @@
 //! Interactive `winit` + `wgpu` viewport runner for `saan run`.
 
 use std::collections::HashSet;
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Instant;
 
 use glam::Vec3;
-use saan_core::{CameraRig, EntityId, InputStrand, Loom, ScenePattern, World};
+use saan_core::{CameraRig, EntityId, InputStrand, Loom, SceneHotReloader, ScenePattern, World};
 use winit::application::ApplicationHandler;
 use winit::dpi::LogicalSize;
 use winit::event::{ElementState, KeyEvent, WindowEvent};
@@ -22,6 +23,7 @@ pub struct WindowOptions {
     pub width: u32,
     pub height: u32,
     pub max_frames: Option<u32>,
+    pub watch_path: Option<PathBuf>,
 }
 
 impl Default for WindowOptions {
@@ -30,6 +32,7 @@ impl Default for WindowOptions {
             width: 1280,
             height: 720,
             max_frames: None,
+            watch_path: None,
         }
     }
 }
@@ -39,6 +42,7 @@ struct SaanApp {
     options: WindowOptions,
     world: World,
     input_entity: EntityId,
+    hot_reloader: Option<SceneHotReloader>,
     loom: Loom,
     render_loom: RenderLoom,
     window: Option<Arc<Window>>,
@@ -53,7 +57,12 @@ struct SaanApp {
 impl SaanApp {
     fn new(pattern: &ScenePattern, options: WindowOptions) -> Self {
         let mut world = World::new();
-        pattern.weave_into_world(&mut world);
+        let spawned = pattern.weave_into_world(&mut world);
+
+        let hot_reloader = options
+            .watch_path
+            .as_ref()
+            .map(|path| SceneHotReloader::new(path.clone(), spawned));
 
         let input_entity = world.spawn();
         world.weave_strand(input_entity, InputStrand::default());
@@ -67,6 +76,7 @@ impl SaanApp {
             options,
             world,
             input_entity,
+            hot_reloader,
             loom,
             render_loom,
             window: None,
@@ -204,6 +214,13 @@ impl ApplicationHandler for SaanApp {
                 let elapsed = (now - self.start_instant).as_secs_f32();
 
                 self.sync_input_strand();
+                if self.frame_counter % 30 == 0 {
+                    if let Some(reloader) = &mut self.hot_reloader {
+                        if let Ok(Some(new_title)) = reloader.poll_reload(&mut self.world) {
+                            println!("Hot-reloaded .saan scene pattern: '{new_title}'");
+                        }
+                    }
+                }
                 let sim_dt = if self.paused { 0.0 } else { dt };
                 let _ = self.loom.step(&mut self.world, sim_dt);
 

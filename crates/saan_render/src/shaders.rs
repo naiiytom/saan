@@ -17,6 +17,10 @@ struct SceneUniforms {
 
 @group(0) @binding(0)
 var<uniform> scene: SceneUniforms;
+@group(0) @binding(1)
+var hero_sheet_tex: texture_2d<f32>;
+@group(0) @binding(2)
+var hero_sheet_sampler: sampler;
 
 struct VertexInput {
     @location(0) world_pos: vec3<f32>,
@@ -70,50 +74,22 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
         return vec4<f32>(0.03, 0.04, 0.06, alpha);
     }
 
-    // Procedural pixel-art silhouettes & normal bevels for 2.5D Sprite Strands
+    // Sampled RGBA8 Sprite Sheet + normal bevels for 2.5D Sprite Strands
     if (in.kind > 0.5 && in.kind < 1.5) {
-        // 1.0: Wanderer Hero 2.5D Sprite (16x24 pixel art character with cloak, hat & staff)
-        let p = floor(in.uv * vec2<f32>(16.0, 24.0));
-        let x = p.x;
-        let y = 23.0 - p.y; // y=0 at bottom, y=23 at top
-
-        var alpha = 0.0;
-        var col = in.color.rgb;
-
-        // Wide bamboo hat (woven saan hat!)
-        if (y >= 17.0 && y <= 20.0 && abs(x - 7.5) <= (21.0 - y) * 1.6) {
-            alpha = 1.0;
-            let weave_checker = (i32(x) + i32(y)) % 2;
-            col = select(vec3<f32>(0.76, 0.58, 0.32), vec3<f32>(0.62, 0.45, 0.24), weave_checker == 0);
-        }
-        // Head & glowing eyes
-        else if (y >= 14.0 && y < 17.0 && abs(x - 7.5) <= 2.5) {
-            alpha = 1.0;
-            col = vec3<f32>(0.22, 0.18, 0.24);
-            if (y == 15.0 && (x == 6.0 || x == 9.0)) {
-                col = vec3<f32>(0.95, 0.85, 0.45);
-                emissive = vec3<f32>(0.6, 0.45, 0.15);
-            }
-        }
-        // Woven traveler cloak & sash
-        else if (y >= 4.0 && y < 14.0 && abs(x - 7.5) <= (4.5 - (y - 4.0) * 0.15)) {
-            alpha = 1.0;
-            col = select(vec3<f32>(0.18, 0.42, 0.52), vec3<f32>(0.78, 0.28, 0.22), y >= 8.0 && y <= 9.0);
-        }
-        // Boots
-        else if (y >= 0.0 && y < 4.0 && (abs(x - 5.5) <= 1.2 || abs(x - 9.5) <= 1.2)) {
-            alpha = 1.0;
-            col = vec3<f32>(0.24, 0.16, 0.12);
-        }
-
-        if (alpha < 0.5) {
+        // 1.0: Wanderer Hero 2.5D Sprite sampled from 4-frame Flipbook Sprite Sheet texture!
+        let sampled = textureSample(hero_sheet_tex, hero_sheet_sampler, in.uv);
+        if (sampled.a < 0.5) {
             discard;
         }
-        // Normal map bevel across sprite width for 3D dynamic lighting
-        let nx = (in.uv.x - 0.5) * 1.4;
+        // Highlight glowing eyes on the sprite sheet
+        if (sampled.r > 0.9 && sampled.g > 0.8) {
+            emissive = vec3<f32>(0.6, 0.45, 0.15);
+        }
+        let local_u = fract(in.uv.x * 4.0);
+        let nx = (local_u - 0.5) * 1.4;
         let ny = (0.5 - in.uv.y) * 0.6;
         normal = normalize(normal + vec3<f32>(nx, ny, 0.25));
-        base_rgba = vec4<f32>(col, 1.0);
+        base_rgba = vec4<f32>(sampled.rgb * in.color.rgb, sampled.a);
     } else if (in.kind >= 1.5 && in.kind < 2.5) {
         // 2.0: Banyan Tree 2.5D Sprite (pixelated trunk + layered leafy canopy)
         let p = pixel_uv(in.uv, 32.0);

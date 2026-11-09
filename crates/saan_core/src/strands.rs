@@ -98,6 +98,13 @@ pub struct Sprite25D {
     pub tint: Vec4,
     /// Depth bias (in view space) to prevent Z-fighting when layering flat cards.
     pub depth_bias: f32,
+    /// Normalized UV sub-rectangle `[u_min, v_min, u_max, v_max]` into the sprite sheet/atlas.
+    #[serde(default = "default_uv_rect")]
+    pub uv_rect: [f32; 4],
+}
+
+fn default_uv_rect() -> [f32; 4] {
+    [0.0, 0.0, 1.0, 1.0]
 }
 
 impl Default for Sprite25D {
@@ -111,7 +118,62 @@ impl Default for Sprite25D {
             casts_shadow: true,
             tint: Vec4::ONE,
             depth_bias: 0.0,
+            uv_rect: [0.0, 0.0, 1.0, 1.0],
         }
+    }
+}
+
+/// Sprite sheet / flipbook animation strand ("Animation Strand") that steps `Sprite25D::uv_rect` over time.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct FlipbookStrand {
+    /// Number of columns in the sprite sheet grid.
+    pub columns: u32,
+    /// Number of rows in the sprite sheet grid.
+    pub rows: u32,
+    /// Inclusive start frame index.
+    pub start_frame: u32,
+    /// Inclusive end frame index.
+    pub end_frame: u32,
+    /// Playback speed in frames per second.
+    pub fps: f32,
+    /// Current frame index.
+    #[serde(default)]
+    pub current_frame: u32,
+    /// Accumulated frame timer in seconds.
+    #[serde(default)]
+    pub timer: f32,
+    /// Whether the animation loops when reaching `end_frame`.
+    pub looping: bool,
+}
+
+impl Default for FlipbookStrand {
+    fn default() -> Self {
+        Self {
+            columns: 4,
+            rows: 1,
+            start_frame: 0,
+            end_frame: 3,
+            fps: 8.0,
+            current_frame: 0,
+            timer: 0.0,
+            looping: true,
+        }
+    }
+}
+
+impl FlipbookStrand {
+    /// Computes the `[u_min, v_min, u_max, v_max]` UV rectangle for `current_frame`.
+    pub fn current_uv_rect(&self) -> [f32; 4] {
+        let cols = self.columns.max(1);
+        let rows = self.rows.max(1);
+        let col = self.current_frame % cols;
+        let row = (self.current_frame / cols).min(rows - 1);
+
+        let w = 1.0 / cols as f32;
+        let h = 1.0 / rows as f32;
+        let u0 = col as f32 * w;
+        let v0 = row as f32 * h;
+        [u0, v0, u0 + w, v0 + h]
     }
 }
 

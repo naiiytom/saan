@@ -18,10 +18,10 @@ Saan is developed in six structured phases, growing from the core **Loom ECS & 2
 - [x] WGSL shaders (`shaders.rs`) for 3D meshes + lit, shadow-casting, normal-beveled 2.5D sprites and diorama tilt-shift DOF.
 - [x] `saan run` command to launch an interactive window from any `.saan` scene.
 
-## Phase 3: Asset Shavers & Sprite Animation
-- [ ] Texture atlas & Aseprite spritesheet loader (`FlipbookStrand`).
-- [ ] glTF 2.0 3D environment & prop loader.
-- [ ] Hot-reloading `.saan` scene patterns and WGSL shaders while running.
+## Phase 3: Asset Shavers & Sprite Animation (Complete)
+- [x] `saan_asset` crate: Aseprite JSON sprite sheet shaver (`AsepriteSheet` → `FlipbookStrand`), Wavefront `.obj` 3D mesh parser (`MeshAssetData`), and RGBA8 sprite sheet generator (`RgbaTexture`).
+- [x] `FlipbookStrand` & `FlipbookAnimationWeftSystem` in `saan_core` + GPU texture/sampler binding in `saan_render` for animated 2.5D sprites.
+- [x] Hot-reloading `.saan` scene patterns (`SceneHotReloader`) while `saan run` is active.
 
 ## Phase 4: 2.5D/3D Spatial Physics & Collision
 - [ ] `saan_spatial` crate: 3D AABB, cylinder, and capsule colliders tailored for 2.5D sprites moving in 3D space.

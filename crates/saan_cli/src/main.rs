@@ -205,12 +205,14 @@ fn main() -> Result<()> {
             println!("Launching Saan wgpu + winit viewport: '{}'", pattern.title);
             println!("Controls: [WASD / Arrows] Pan | [Q / E] Orbit | [R / F] Zoom | [Space] Pause | [Esc] Quit");
 
+            let watch_path = scene_path.exists().then_some(scene_path);
             run_windowed(
                 pattern,
                 WindowOptions {
                     width,
                     height,
                     max_frames,
+                    watch_path,
                 },
             )?;
         }

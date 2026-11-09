@@ -1,13 +1,14 @@
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use std::time::SystemTime;
 
 use glam::{Quat, Vec2, Vec3, Vec4};
 use serde::{Deserialize, Serialize};
 
 use crate::ecs::{EntityId, World};
 use crate::strands::{
-    BillboardMode, CameraProjection, CameraRig, DirectionalLight, Material3D, Mesh3D,
-    MeshPrimitive, NameStrand, PointLight, Sprite25D, Transform, Velocity,
+    BillboardMode, CameraProjection, CameraRig, DirectionalLight, FlipbookStrand, Material3D,
+    Mesh3D, MeshPrimitive, NameStrand, PointLight, Sprite25D, Transform, Velocity,
 };
 
 /// Serializable blueprint of a single entity and its interwoven 2.5D/3D strands.
@@ -19,6 +20,8 @@ pub struct EntityBlueprint {
     pub velocity: Option<Velocity>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sprite_25d: Option<Sprite25D>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub flipbook: Option<FlipbookStrand>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub mesh_3d: Option<Mesh3D>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -51,6 +54,7 @@ impl ScenePattern {
                     transform: Transform::from_xyz(0.0, 6.5, 11.0),
                     velocity: None,
                     sprite_25d: None,
+                    flipbook: None,
                     mesh_3d: None,
                     camera: Some(CameraRig {
                         eye: Vec3::new(0.0, 6.5, 11.0),
@@ -73,6 +77,7 @@ impl ScenePattern {
                     transform: Transform::from_xyz(10.0, 20.0, 8.0),
                     velocity: None,
                     sprite_25d: None,
+                    flipbook: None,
                     mesh_3d: None,
                     camera: None,
                     directional_light: Some(DirectionalLight {
@@ -88,6 +93,7 @@ impl ScenePattern {
                     transform: Transform::from_xyz(0.0, 0.0, 0.0),
                     velocity: None,
                     sprite_25d: None,
+                    flipbook: None,
                     mesh_3d: Some(Mesh3D {
                         primitive: MeshPrimitive::GroundPlane {
                             width: 24.0,
@@ -111,6 +117,7 @@ impl ScenePattern {
                     transform: Transform::from_xyz(0.0, 0.75, -2.5),
                     velocity: None,
                     sprite_25d: None,
+                    flipbook: None,
                     mesh_3d: Some(Mesh3D {
                         primitive: MeshPrimitive::Cube {
                             size: Vec3::new(3.0, 1.5, 2.0),
@@ -136,14 +143,25 @@ impl ScenePattern {
                         angular_y: 0.0,
                     }),
                     sprite_25d: Some(Sprite25D {
-                        texture_id: "sprites/wanderer_idle.png".to_string(),
+                        texture_id: "sprites/wanderer_walk_sheet.png".to_string(),
                         size: Vec2::new(1.2, 1.8),
                         pivot: Vec2::new(0.5, 0.0),
                         billboard: BillboardMode::CylindricalY,
-                        normal_map_id: Some("sprites/wanderer_idle_n.png".to_string()),
+                        normal_map_id: Some("sprites/wanderer_walk_n.png".to_string()),
                         casts_shadow: true,
                         tint: Vec4::ONE,
                         depth_bias: 0.0,
+                        uv_rect: [0.0, 0.0, 0.25, 1.0],
+                    }),
+                    flipbook: Some(FlipbookStrand {
+                        columns: 4,
+                        rows: 1,
+                        start_frame: 0,
+                        end_frame: 3,
+                        fps: 6.0,
+                        current_frame: 0,
+                        timer: 0.0,
+                        looping: true,
                     }),
                     mesh_3d: None,
                     camera: None,
@@ -163,7 +181,9 @@ impl ScenePattern {
                         casts_shadow: true,
                         tint: Vec4::ONE,
                         depth_bias: 0.0,
+                        uv_rect: [0.0, 0.0, 1.0, 1.0],
                     }),
+                    flipbook: None,
                     mesh_3d: None,
                     camera: None,
                     directional_light: None,
@@ -183,7 +203,9 @@ impl ScenePattern {
                         casts_shadow: false,
                         tint: Vec4::new(1.0, 0.78, 0.35, 0.95),
                         depth_bias: 0.01,
+                        uv_rect: [0.0, 0.0, 1.0, 1.0],
                     }),
+                    flipbook: None,
                     mesh_3d: None,
                     camera: None,
                     directional_light: None,
@@ -231,6 +253,9 @@ impl ScenePattern {
             if let Some(ref sprite) = bp.sprite_25d {
                 world.weave_strand(entity, sprite.clone());
             }
+            if let Some(ref flipbook) = bp.flipbook {
+                world.weave_strand(entity, flipbook.clone());
+            }
             if let Some(ref mesh) = bp.mesh_3d {
                 world.weave_strand(entity, mesh.clone());
             }
@@ -246,6 +271,54 @@ impl ScenePattern {
             spawned.push(entity);
         }
         spawned
+    }
+}
+
+/// Watches a `.saan` scene file on disk and hot-reloads its entities into [`World`] when modified.
+#[derive(Debug, Clone)]
+pub struct SceneHotReloader {
+    path: PathBuf,
+    last_modified: Option<SystemTime>,
+    tracked_entities: Vec<EntityId>,
+}
+
+impl SceneHotReloader {
+    pub fn new(path: impl Into<PathBuf>, initial_entities: Vec<EntityId>) -> Self {
+        let path = path.into();
+        let last_modified = fs::metadata(&path).and_then(|m| m.modified()).ok();
+        Self {
+            path,
+            last_modified,
+            tracked_entities: initial_entities,
+        }
+    }
+
+    /// Checks if the `.saan` file has a newer modification timestamp; if so, reloads and re-weaves the scene.
+    /// Returns `Ok(Some(new_title))` if a hot-reload occurred.
+    pub fn poll_reload(&mut self, world: &mut World) -> std::io::Result<Option<String>> {
+        let Ok(meta) = fs::metadata(&self.path) else {
+            return Ok(None);
+        };
+        let Ok(modified) = meta.modified() else {
+            return Ok(None);
+        };
+
+        let changed = match self.last_modified {
+            Some(prev) => modified > prev,
+            None => true,
+        };
+
+        if !changed {
+            return Ok(None);
+        }
+
+        let pattern = ScenePattern::load_from_file(&self.path)?;
+        for entity in self.tracked_entities.drain(..) {
+            world.despawn(entity);
+        }
+        self.tracked_entities = pattern.weave_into_world(world);
+        self.last_modified = Some(modified);
+        Ok(Some(pattern.title))
     }
 }
 

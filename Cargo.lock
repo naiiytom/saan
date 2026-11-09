@@ -1489,6 +1489,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cf54715a573b99ac80df0bc206da022bcd442c974952c7b9720069370852e21f"
 
 [[package]]
+name = "saan_asset"
+version = "0.1.0"
+dependencies = [
+ "glam",
+ "saan_core",
+ "serde",
+ "serde_json",
+ "thiserror 1.0.69",
+]
+
+[[package]]
 name = "saan_cli"
 version = "0.1.0"
 dependencies = [
@@ -1519,6 +1530,7 @@ dependencies = [
  "glam",
  "petgraph",
  "pollster",
+ "saan_asset",
  "saan_core",
  "serde",
  "wgpu",

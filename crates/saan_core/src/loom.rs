@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use crate::ecs::World;
-use crate::strands::{CameraRig, InputStrand, Transform, Velocity};
+use crate::strands::{CameraRig, FlipbookStrand, InputStrand, Sprite25D, Transform, Velocity};
 
 /// A system ("Weft thread") that weaves through matching strands in the [`World`] each frame.
 pub trait WeftSystem: Send + Sync {
@@ -91,11 +91,13 @@ impl Loom {
         Self::default()
     }
 
-    /// Creates a Loom pre-configured with standard gameplay motion and camera systems.
+    /// Creates a Loom pre-configured with standard gameplay motion, flipbook animation, and camera systems.
     pub fn with_default_gameplay() -> Self {
         let mut loom = Self::new();
         loom.add_system(VelocityKinematicsSystem)
             .expect("Failed to register VelocityKinematicsSystem");
+        loom.add_system(FlipbookAnimationWeftSystem)
+            .expect("Failed to register FlipbookAnimationWeftSystem");
         loom.add_system(CameraOrbitWeftSystem)
             .expect("Failed to register CameraOrbitWeftSystem");
         loom
@@ -296,6 +298,53 @@ impl WeftSystem for CameraOrbitWeftSystem {
             let zoom_scale = (1.0 - input.zoom_delta * dt).clamp(0.8, 1.25);
             cam.target += pan;
             cam.eye = cam.target + rotated_offset * zoom_scale + glam::Vec3::Y * (input.move_axis.y * 3.0 * dt);
+        }
+    }
+}
+
+/// Built-in Weft system that advances [`FlipbookStrand`] frame indices and updates [`Sprite25D::uv_rect`].
+pub struct FlipbookAnimationWeftSystem;
+
+impl WeftSystem for FlipbookAnimationWeftSystem {
+    fn name(&self) -> &'static str {
+        "flipbook_sprite_animation"
+    }
+
+    fn reads(&self) -> &[&'static str] {
+        &["FlipbookStrand"]
+    }
+
+    fn writes(&self) -> &[&'static str] {
+        &["FlipbookStrand", "Sprite25D"]
+    }
+
+    fn weave(&mut self, world: &mut World, dt: f32) {
+        if dt <= 0.0 {
+            return;
+        }
+
+        let mut updates = Vec::new();
+        for (entity, flipbook) in world.query_mut::<FlipbookStrand>() {
+            if flipbook.fps <= 0.0 {
+                continue;
+            }
+            let frame_duration = 1.0 / flipbook.fps;
+            flipbook.timer += dt;
+            while flipbook.timer >= frame_duration {
+                flipbook.timer -= frame_duration;
+                if flipbook.current_frame < flipbook.end_frame {
+                    flipbook.current_frame += 1;
+                } else if flipbook.looping {
+                    flipbook.current_frame = flipbook.start_frame;
+                }
+            }
+            updates.push((entity, flipbook.current_uv_rect()));
+        }
+
+        for (entity, uv_rect) in updates {
+            if let Some(sprite) = world.get_strand_mut::<Sprite25D>(entity) {
+                sprite.uv_rect = uv_rect;
+            }
         }
     }
 }

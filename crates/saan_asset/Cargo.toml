@@ -1,0 +1,13 @@
+[package]
+name = "saan_asset"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "The Shaver: Asset pipeline for Saan (Aseprite sprite sheets, RGBA textures, glTF/OBJ 3D meshes)"
+
+[dependencies]
+glam = { version = "0.29", features = ["serde"] }
+saan_core = { path = "../saan_core" }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+thiserror = "1.0"
