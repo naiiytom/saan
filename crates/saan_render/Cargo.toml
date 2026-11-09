@@ -3,10 +3,15 @@ name = "saan_render"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
-description = "The Mesh: Hybrid 2.5D (HD-2D billboard sprites) + 3D mesh render graph and depth interlacer for Saan"
+description = "The Mesh: Hybrid 2.5D (HD-2D billboard sprites) + 3D mesh render graph and wgpu backend for Saan"
 
 [dependencies]
+anyhow = "1.0"
+bytemuck = { version = "1.18", features = ["derive"] }
 glam = { version = "0.29", features = ["serde"] }
 petgraph = "0.6"
+pollster = "0.4"
 saan_core = { path = "../saan_core" }
 serde = { version = "1.0", features = ["derive"] }
+wgpu = "23.0"
+winit = "0.30"

@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use crate::ecs::World;
-use crate::strands::{Transform, Velocity};
+use crate::strands::{CameraRig, InputStrand, Transform, Velocity};
 
 /// A system ("Weft thread") that weaves through matching strands in the [`World`] each frame.
 pub trait WeftSystem: Send + Sync {
@@ -91,11 +91,13 @@ impl Loom {
         Self::default()
     }
 
-    /// Creates a Loom pre-configured with standard gameplay motion systems.
+    /// Creates a Loom pre-configured with standard gameplay motion and camera systems.
     pub fn with_default_gameplay() -> Self {
         let mut loom = Self::new();
         loom.add_system(VelocityKinematicsSystem)
             .expect("Failed to register VelocityKinematicsSystem");
+        loom.add_system(CameraOrbitWeftSystem)
+            .expect("Failed to register CameraOrbitWeftSystem");
         loom
     }
 
@@ -253,6 +255,47 @@ impl WeftSystem for VelocityKinematicsSystem {
                     transform.rotation *= glam::Quat::from_rotation_y(vel.angular_y * dt);
                 }
             }
+        }
+    }
+}
+
+/// Built-in Weft system that weaves [`InputStrand`] controls into the active [`CameraRig`].
+pub struct CameraOrbitWeftSystem;
+
+impl WeftSystem for CameraOrbitWeftSystem {
+    fn name(&self) -> &'static str {
+        "camera_orbit_input"
+    }
+
+    fn reads(&self) -> &[&'static str] {
+        &["InputStrand"]
+    }
+
+    fn writes(&self) -> &[&'static str] {
+        &["CameraRig"]
+    }
+
+    fn weave(&mut self, world: &mut World, dt: f32) {
+        let Some((_, &input)) = world.query::<InputStrand>().next() else {
+            return;
+        };
+
+        for (_, cam) in world.query_mut::<CameraRig>() {
+            let offset = cam.eye - cam.target;
+            let yaw = input.orbit_yaw * dt;
+            let rotated_offset = if yaw.abs() > 1e-6 {
+                glam::Quat::from_rotation_y(yaw) * offset
+            } else {
+                offset
+            };
+
+            let forward_flat = glam::Vec3::new(-rotated_offset.x, 0.0, -rotated_offset.z).normalize_or_zero();
+            let right_flat = forward_flat.cross(glam::Vec3::Y).normalize_or_zero();
+            let pan = (right_flat * input.move_axis.x + forward_flat * input.move_axis.z) * 5.0 * dt;
+
+            let zoom_scale = (1.0 - input.zoom_delta * dt).clamp(0.8, 1.25);
+            cam.target += pan;
+            cam.eye = cam.target + rotated_offset * zoom_scale + glam::Vec3::Y * (input.move_axis.y * 3.0 * dt);
         }
     }
 }

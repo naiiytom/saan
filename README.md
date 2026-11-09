@@ -16,7 +16,7 @@
 | :--- | :--- | :--- |
 | `saan_core` | **The Loom** | Custom ECS (`World`, `EntityId`, `Strand`), spatial math (`glam`), DAG system scheduler (`Loom`), tension validation, and `.saan` scene patterns |
 | `saan_render` | **The Mesh** | Hybrid 2.5D + 3D render graph (`ShadowPass` → `Opaque3DPass` → `Interlace25DPass` → `DioramaPostPass`), billboard math, and depth sorting |
-| `saan_cli` | **The Craft** | CLI toolbelt: `saan init`, `saan inspect`, `saan weave` |
+| `saan_cli` | **The Craft** | CLI toolbelt: `saan init`, `saan inspect`, `saan weave`, `saan run` |
 
 ---
 
@@ -35,8 +35,12 @@ cargo run -p saan_cli -- init my-diorama
 # 2. Inspect the scene & validate Loom DAG tension (cycles & read/write hazards)
 cargo run -p saan_cli -- inspect my-diorama/scene.saan
 
-# 3. Weave (simulate & extract 2.5D/3D render batches for N frames)
+# 3. Weave (simulate & extract 2.5D/3D render batches headless for N frames)
 cargo run -p saan_cli -- weave my-diorama/scene.saan --frames 3
+
+# 4. Run the interactive winit + wgpu HD-2D & 3D window!
+#    Controls: WASD/Arrows to pan, Q/E to orbit, R/F to zoom, Space to pause, Esc to quit
+cargo run -p saan_cli -- run my-diorama/scene.saan
 ```
 
 ---

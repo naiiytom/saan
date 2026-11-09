@@ -9,9 +9,12 @@ pub mod pattern;
 pub mod strands;
 
 pub use ecs::{EntityId, Strand, World};
-pub use loom::{HazardKind, Loom, LoomError, StrandHazard, TensionReport, WeftNode, WeftSystem};
+pub use loom::{
+    CameraOrbitWeftSystem, HazardKind, Loom, LoomError, StrandHazard, TensionReport,
+    VelocityKinematicsSystem, WeftNode, WeftSystem,
+};
 pub use pattern::{EntityBlueprint, ScenePattern};
 pub use strands::{
-    BillboardMode, CameraProjection, CameraRig, DirectionalLight, Material3D, Mesh3D,
+    BillboardMode, CameraProjection, CameraRig, DirectionalLight, InputStrand, Material3D, Mesh3D,
     MeshPrimitive, NameStrand, PointLight, Sprite25D, Transform, Velocity,
 };

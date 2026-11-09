@@ -54,6 +54,19 @@ pub struct Velocity {
     pub angular_y: f32,
 }
 
+/// Interactive input & frame timing strand woven into the [`World`] during `saan run`.
+#[derive(Debug, Clone, Copy, PartialEq, Default, Serialize, Deserialize)]
+pub struct InputStrand {
+    /// Camera orbit / movement input vector `(right, up, forward)` in `[-1.0, 1.0]`.
+    pub move_axis: Vec3,
+    /// Orbit yaw delta in radians for this frame.
+    pub orbit_yaw: f32,
+    /// Zoom delta (scroll or Q/E keys).
+    pub zoom_delta: f32,
+    /// Whether the simulation pause toggle was requested.
+    pub paused: bool,
+}
+
 /// How a 2.5D sprite orientates itself inside the 3D world relative to the active camera.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum BillboardMode {

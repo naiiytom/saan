@@ -3,6 +3,7 @@ use std::path::PathBuf;
 use anyhow::{bail, Context, Result};
 use clap::{Parser, Subcommand};
 use saan_core::{Loom, ScenePattern, World};
+use saan_render::window::{run_windowed, WindowOptions};
 use saan_render::RenderLoom;
 
 #[derive(Parser)]
@@ -33,7 +34,7 @@ enum Commands {
         #[arg(default_value = "scene.saan")]
         scene: PathBuf,
     },
-    /// Weave (simulate) the Loom ECS & 2.5D/3D Render Graph for N frames
+    /// Weave (simulate) the Loom ECS & 2.5D/3D Render Graph headless for N frames
     Weave {
         /// Path to the .saan scene pattern file
         #[arg(default_value = "scene.saan")]
@@ -44,6 +45,21 @@ enum Commands {
         /// Fixed delta-time per frame in seconds
         #[arg(long, default_value_t = 0.016)]
         dt: f32,
+    },
+    /// Launch an interactive winit + wgpu window running the 2.5D + 3D scene
+    Run {
+        /// Path to the .saan scene pattern file (if missing, runs the default HD-2D Diorama scene)
+        #[arg(default_value = "scene.saan")]
+        scene: PathBuf,
+        /// Window width in logical pixels
+        #[arg(long, default_value_t = 1280)]
+        width: u32,
+        /// Window height in logical pixels
+        #[arg(long, default_value_t = 720)]
+        height: u32,
+        /// Optional maximum number of rendered frames before auto-closing (useful for verification)
+        #[arg(long)]
+        max_frames: Option<u32>,
     },
 }
 
@@ -166,6 +182,37 @@ fn main() -> Result<()> {
                     );
                 }
             }
+        }
+
+        Commands::Run {
+            scene,
+            width,
+            height,
+            max_frames,
+        } => {
+            let scene_path = resolve_scene_path(scene);
+            let pattern = if scene_path.exists() {
+                ScenePattern::load_from_file(&scene_path)
+                    .with_context(|| format!("Failed to load scene '{}'", scene_path.display()))?
+            } else {
+                println!(
+                    "No '{}' found; weaving built-in HD-2D Diorama showcase scene...",
+                    scene_path.display()
+                );
+                ScenePattern::default_hd2d_diorama("Saan HD-2D Courtyard")
+            };
+
+            println!("Launching Saan wgpu + winit viewport: '{}'", pattern.title);
+            println!("Controls: [WASD / Arrows] Pan | [Q / E] Orbit | [R / F] Zoom | [Space] Pause | [Esc] Quit");
+
+            run_windowed(
+                pattern,
+                WindowOptions {
+                    width,
+                    height,
+                    max_frames,
+                },
+            )?;
         }
     }
 

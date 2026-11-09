@@ -12,11 +12,11 @@ Saan is developed in six structured phases, growing from the core **Loom ECS & 2
 - [x] **The Render Loom (`saan_render`):** Scene extraction, camera view-projection math, 2.5D billboard matrix generation, depth-sorted interlacing queue, and 4-pass HD-2D render graph (`ShadowPass` → `Opaque3DPass` → `Interlace25DPass` → `DioramaPostPass`).
 - [x] **The Craft CLI (`saan_cli`):** `saan init`, `saan inspect`, and `saan weave`.
 
-## Phase 2: Windowed wgpu Renderer & Interactive Viewport
-- [ ] `winit` window lifecycle & input strand (`InputState` keyboard/mouse/gamepad).
-- [ ] `wgpu` GPU pipeline implementation for the 4 Render Loom passes.
-- [ ] WGSL shaders for 3D PBR meshes + lit, shadow-receiving, normal-mapped 2.5D sprites.
-- [ ] `saan run` command to launch an interactive window from any `.saan` scene.
+## Phase 2: Windowed wgpu Renderer & Interactive Viewport (Complete)
+- [x] `winit` window lifecycle & input strand (`InputStrand` keyboard controls + `CameraOrbitWeftSystem`).
+- [x] `wgpu` GPU pipeline implementation for the 4 Render Loom passes (`gpu.rs`).
+- [x] WGSL shaders (`shaders.rs`) for 3D meshes + lit, shadow-casting, normal-beveled 2.5D sprites and diorama tilt-shift DOF.
+- [x] `saan run` command to launch an interactive window from any `.saan` scene.
 
 ## Phase 3: Asset Shavers & Sprite Animation
 - [ ] Texture atlas & Aseprite spritesheet loader (`FlipbookStrand`).

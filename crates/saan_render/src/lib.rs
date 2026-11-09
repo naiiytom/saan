@@ -5,12 +5,16 @@
 //! the 4-stage HD-2D render graph:
 //! `ShadowMapPass` -> `OpaqueMesh3DPass` -> `Sprite25DInterlacePass` -> `DioramaPostPass`.
 
-use glam::{Mat4, Quat, Vec3};
+pub mod gpu;
+pub mod shaders;
+pub mod window;
+
+use glam::{Mat4, Quat, Vec2, Vec3, Vec4};
 use petgraph::algo::toposort;
 use petgraph::graph::DiGraph;
 use saan_core::{
-    BillboardMode, CameraProjection, CameraRig, DirectionalLight, EntityId, Mesh3D, NameStrand,
-    PointLight, Sprite25D, Transform, World,
+    BillboardMode, CameraProjection, CameraRig, DirectionalLight, EntityId, Mesh3D, MeshPrimitive,
+    NameStrand, PointLight, Sprite25D, Transform, World,
 };
 use serde::{Deserialize, Serialize};
 
@@ -19,7 +23,10 @@ use serde::{Deserialize, Serialize};
 pub struct MeshDrawItem {
     pub entity: EntityId,
     pub label: String,
+    pub primitive: MeshPrimitive,
     pub world_matrix: Mat4,
+    pub base_color: Vec4,
+    pub roughness: f32,
     pub casts_shadow: bool,
     pub receives_shadow: bool,
     pub material_name: String,
@@ -32,6 +39,9 @@ pub struct Sprite25DDrawItem {
     pub label: String,
     pub texture_id: String,
     pub billboard_mode: BillboardMode,
+    pub size: Vec2,
+    pub pivot: Vec2,
+    pub tint: Vec4,
     pub world_matrix: Mat4,
     pub world_normal: Vec3,
     pub camera_distance: f32,
@@ -154,7 +164,10 @@ impl RenderLoom {
             meshes_3d.push(MeshDrawItem {
                 entity,
                 label,
+                primitive: mesh.primitive.clone(),
                 world_matrix: transform.matrix(),
+                base_color: mesh.material.base_color,
+                roughness: mesh.material.roughness,
                 casts_shadow: mesh.casts_shadow,
                 receives_shadow: mesh.receives_shadow,
                 material_name: mesh.material.name.clone(),
@@ -183,6 +196,9 @@ impl RenderLoom {
                 label,
                 texture_id: sprite.texture_id.clone(),
                 billboard_mode: sprite.billboard,
+                size: sprite.size,
+                pivot: sprite.pivot,
+                tint: sprite.tint,
                 world_matrix,
                 world_normal,
                 camera_distance,

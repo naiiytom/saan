@@ -55,7 +55,7 @@ saan_cli      (The Craft)  — CLI toolbelt (`saan init`, `saan inspect`, `saan 
 | `saan init [path] [--force]` | Implemented | Scaffolds a new Saan game project & default `.saan` scene pattern |
 | `saan inspect [scene]` | Implemented | Checks "tension" on the Loom DAG and validates a `.saan` scene pattern |
 | `saan weave [scene]` | Implemented | Steps the Loom + Render Graph headless for verification & frame telemetry |
-| `saan run [scene]` | Phase 2 | Opens interactive `winit` + `wgpu` window running the scene |
+| `saan run [scene]` | Implemented | Opens interactive `winit` + `wgpu` window running the scene |
 
 ## Running Locally
 
