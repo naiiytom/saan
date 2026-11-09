@@ -85,3 +85,8 @@ Uses the five default canonical triage labels (`needs-triage`, `needs-info`, `re
 
 Single-context layout (`CONTEXT.md` at the repo root and ADRs in `docs/adr/`). See `docs/agents/domain.md`.
 
+### Branching & PR policy
+
+- **Never commit directly to `main`**: All changes, features, and bug fixes must be developed on a dedicated feature or topic branch (e.g., `feat/...`, `fix/...`, `docs/...`).
+- **Open a Pull Request**: Push the branch to `origin` and open a PR using `gh pr create` with a descriptive summary of changes and verification steps.
+
