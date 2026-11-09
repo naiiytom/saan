@@ -1,0 +1,12 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/saan_core",
+    "crates/saan_render",
+    "crates/saan_cli",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT"

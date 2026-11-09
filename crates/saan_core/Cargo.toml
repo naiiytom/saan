@@ -1,0 +1,13 @@
+[package]
+name = "saan_core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "The Loom: ECS, 2.5D/3D spatial strands, DAG system scheduler, and scene patterns for the Saan game engine"
+
+[dependencies]
+glam = { version = "0.29", features = ["serde"] }
+petgraph = "0.6"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+thiserror = "1.0"
