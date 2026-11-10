@@ -1000,6 +1000,26 @@ impl GpuRenderer {
             .texture
             .create_view(&wgpu::TextureViewDescriptor::default());
 
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("Saan HD-2D Render Encoder"),
+            });
+
+        self.encode_frame(frame, &mut encoder, &view, elapsed_secs);
+
+        self.queue.submit(std::iter::once(encoder.finish()));
+        output.present();
+        Ok(())
+    }
+
+    pub fn encode_frame(
+        &mut self,
+        frame: &RenderFrame,
+        encoder: &mut wgpu::CommandEncoder,
+        target_view: &wgpu::TextureView,
+        elapsed_secs: f32,
+    ) {
         let uniforms = GpuSceneUniforms::from_frame(frame, elapsed_secs);
         self.queue
             .write_buffer(&self.uniform_buffer, 0, bytemuck::bytes_of(&uniforms));
@@ -1050,12 +1070,6 @@ impl GpuRenderer {
                 })
         });
 
-        let mut encoder = self
-            .device
-            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                label: Some("Saan Frame Command Encoder"),
-            });
-
         // Pass 1: Directional Shadow Pass to 2048x2048 depth texture
         {
             let mut spass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -1091,7 +1105,7 @@ impl GpuRenderer {
             let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("Saan HD-2D Unified Forward Pass"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &view,
+                    view: target_view,
                     resolve_target: None,
                     ops: wgpu::Operations {
                         load: wgpu::LoadOp::Clear(wgpu::Color {
@@ -1132,10 +1146,6 @@ impl GpuRenderer {
                 rpass.draw(0..sprite_verts.len() as u32, 0..1);
             }
         }
-
-        self.queue.submit(std::iter::once(encoder.finish()));
-        output.present();
-        Ok(())
     }
 }
 
