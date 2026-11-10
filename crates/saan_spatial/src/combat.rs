@@ -8,7 +8,7 @@
 
 use glam::{Vec2, Vec3};
 use saan_core::{
-    ActionState, ActionStateStrand, CombatShape, EntityId, EventWeftStrand, FlipbookStrand,
+    ActionState, ActionStateStrand, CameraRig, CombatShape, EntityId, EventWeftStrand, FlipbookStrand,
     GameplayEvent, HealthStrand, HitboxStrand, HurtboxStrand, InputStrand, NameStrand, Transform,
     Velocity, WeftSystem, World,
 };
@@ -96,7 +96,7 @@ impl WeftSystem for ActionStateWeftSystem {
     }
 
     fn reads(&self) -> &[&'static str] {
-        &["InputStrand", "ActionStateStrand", "Transform"]
+        &["InputStrand", "ActionStateStrand", "Transform", "CameraRig"]
     }
 
     fn writes(&self) -> &[&'static str] {
@@ -105,6 +105,16 @@ impl WeftSystem for ActionStateWeftSystem {
 
     fn weave(&mut self, world: &mut World, dt: f32) {
         let input = world.query::<InputStrand>().next().map(|(_, inp)| *inp);
+
+        // Derive camera-relative forward and right planar vectors for intuitive diorama movement
+        let (cam_forward, cam_right) = if let Some((_, cam)) = world.query::<CameraRig>().next() {
+            let offset = cam.eye - cam.target;
+            let forward_flat = Vec3::new(-offset.x, 0.0, -offset.z).normalize_or_zero();
+            let right_flat = forward_flat.cross(Vec3::Y).normalize_or_zero();
+            (forward_flat, right_flat)
+        } else {
+            (Vec3::new(0.0, 0.0, -1.0), Vec3::new(1.0, 0.0, 0.0))
+        };
 
         // Collect new attack spawns to execute after iteration
         let mut attacks_to_spawn: Vec<(EntityId, u8, Vec3, Vec2, u32)> = Vec::new();
@@ -124,7 +134,8 @@ impl WeftSystem for ActionStateWeftSystem {
                 if team == 0 {
                     if let Some(inp) = input {
                         if inp.dash {
-                            let move_dir = Vec2::new(inp.move_axis.x, inp.move_axis.z);
+                            let move_world = cam_right * inp.move_axis.x + cam_forward * inp.move_axis.z;
+                            let move_dir = Vec2::new(move_world.x, move_world.z);
                             let dir = if move_dir.length_squared() > 1e-4 {
                                 move_dir.normalize()
                             } else {
@@ -159,11 +170,14 @@ impl WeftSystem for ActionStateWeftSystem {
                             };
                         } else if team == 0 {
                             if let Some(inp) = input {
-                                let move_dir = Vec2::new(inp.move_axis.x, inp.move_axis.z);
+                                let move_world = cam_right * inp.move_axis.x + cam_forward * inp.move_axis.z;
+                                let move_dir = Vec2::new(move_world.x, move_world.z);
                                 if move_dir.length_squared() > 1e-4 {
                                     let norm = move_dir.normalize();
                                     action.facing_direction = norm;
                                     action.state = ActionState::Move { speed: action.move_speed };
+                                    new_vel = Some(Vec3::new(norm.x * action.move_speed, 0.0, norm.y * action.move_speed));
+                                    flipbook_start_end = Some((0, 3));
                                 }
                             }
                         }
@@ -188,7 +202,8 @@ impl WeftSystem for ActionStateWeftSystem {
                             };
                         } else if team == 0 {
                             if let Some(inp) = input {
-                                let move_dir = Vec2::new(inp.move_axis.x, inp.move_axis.z);
+                                let move_world = cam_right * inp.move_axis.x + cam_forward * inp.move_axis.z;
+                                let move_dir = Vec2::new(move_world.x, move_world.z);
                                 if move_dir.length_squared() > 1e-4 {
                                     let norm = move_dir.normalize();
                                     action.facing_direction = norm;
@@ -532,5 +547,53 @@ mod tests {
 
         let vel_after = world.get_strand::<Velocity>(player).unwrap();
         assert_eq!(vel_after.linear.x, 0.0);
+    }
+
+    #[test]
+    fn input_w_moves_character_forward_into_screen_towards_shrine() {
+        let mut world = World::new();
+
+        // Setup Diorama Camera (eye at +14.5 looking at 0)
+        let cam_e = world.spawn();
+        world.weave_strand(cam_e, CameraRig {
+            eye: Vec3::new(0.0, 9.5, 14.5),
+            target: Vec3::new(0.0, 1.2, 0.0),
+            up: Vec3::Y,
+            aspect_ratio: 16.0 / 9.0,
+            near: 0.1,
+            far: 150.0,
+            projection: saan_core::CameraProjection::DioramaTilt {
+                fov_y_degrees: 34.0,
+                focus_distance: 14.5,
+                aperture_blur: 0.75,
+            },
+        });
+
+        // Setup Hero Wanderer (Team 0)
+        let hero = world.spawn();
+        world
+            .weave_strand(hero, Transform::from_xyz(0.0, 0.0, 2.0))
+            .weave_strand(hero, Velocity::default())
+            .weave_strand(hero, ActionStateStrand::default())
+            .weave_strand(hero, HurtboxStrand::cylinder(0.5, 1.8, 0));
+
+        // Input strand simulating 'W' key pressed (move_axis.z = +1.0)
+        let inp_e = world.spawn();
+        world.weave_strand(inp_e, InputStrand {
+            move_axis: Vec3::new(0.0, 0.0, 1.0),
+            ..Default::default()
+        });
+
+        let mut sys = ActionStateWeftSystem;
+        sys.weave(&mut world, 0.016);
+
+        let action = world.get_strand::<ActionStateStrand>(hero).unwrap();
+        assert!(matches!(action.state, ActionState::Move { .. }));
+        // Facing direction points into the screen (-Z) towards the shrine!
+        assert!((action.facing_direction.y - (-1.0)).abs() < 1e-4);
+
+        let vel = world.get_strand::<Velocity>(hero).unwrap();
+        // Velocity along Z is negative (away from camera, up on screen towards shrine)
+        assert!(vel.linear.z < -5.0);
     }
 }

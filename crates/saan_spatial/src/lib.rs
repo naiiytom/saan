@@ -35,6 +35,9 @@ pub fn register_spatial_systems(loom: &mut Loom) -> Result<(), LoomError> {
     loom.add_system(CameraOcclusionWeftSystem)?;
 
     loom.add_ordering("agent_commanding_weft", "action_state_weft")?;
+    if loom.has_system("camera_orbit_input") {
+        loom.add_ordering("camera_orbit_input", "action_state_weft")?;
+    }
     loom.add_ordering("action_state_weft", "velocity_kinematics")?;
     if loom.has_system("flipbook_sprite_animation") {
         loom.add_ordering("action_state_weft", "flipbook_sprite_animation")?;

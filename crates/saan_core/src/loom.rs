@@ -317,7 +317,7 @@ impl WeftSystem for CameraOrbitWeftSystem {
 
             let forward_flat = glam::Vec3::new(-rotated_offset.x, 0.0, -rotated_offset.z).normalize_or_zero();
             let right_flat = forward_flat.cross(glam::Vec3::Y).normalize_or_zero();
-            let pan = (right_flat * input.move_axis.x + forward_flat * input.move_axis.z) * 5.0 * dt;
+            let pan = (right_flat * input.move_axis.x + forward_flat * input.move_axis.z) * 6.0 * dt;
 
             let zoom_scale = (1.0 - input.zoom_delta * dt).clamp(0.8, 1.25);
             cam.target += pan;
