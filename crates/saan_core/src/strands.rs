@@ -1,6 +1,8 @@
 use glam::{Mat4, Quat, Vec2, Vec3, Vec4};
 use serde::{Deserialize, Serialize};
 
+use crate::EntityId;
+
 /// Human-readable label strand for an entity.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct NameStrand(pub String);
@@ -65,6 +67,12 @@ pub struct InputStrand {
     pub zoom_delta: f32,
     /// Whether the simulation pause toggle was requested.
     pub paused: bool,
+    /// Whether the primary attack action was triggered this frame.
+    #[serde(default)]
+    pub attack: bool,
+    /// Whether the dash / dodge roll action was triggered this frame.
+    #[serde(default)]
+    pub dash: bool,
 }
 
 /// How a 2.5D sprite orientates itself inside the 3D world relative to the active camera.
@@ -405,6 +413,14 @@ pub enum GameplayEvent {
         source: String,
         tag: String,
     },
+    /// Emitted when an attack hitbox intersects an enemy hurtbox.
+    CombatHit {
+        attacker: String,
+        target: String,
+        damage: f32,
+        hit_pos: Vec3,
+        knockback: Vec3,
+    },
 }
 
 /// Event bus strand (`EventWeft`) allowing systems to publish and subscribe to decoupled gameplay triggers.
@@ -664,6 +680,149 @@ impl ParticleEmitter3D {
     }
 }
 
+/// Dynamic health pool strand for characters, enemies, and destructibles.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct HealthStrand {
+    pub current: f32,
+    pub max: f32,
+    pub is_alive: bool,
+    pub invulnerable: bool,
+}
 
+impl HealthStrand {
+    pub fn new(max: f32) -> Self {
+        Self {
+            current: max,
+            max,
+            is_alive: true,
+            invulnerable: false,
+        }
+    }
 
+    pub fn take_damage(&mut self, amount: f32) -> bool {
+        if self.invulnerable || !self.is_alive {
+            return false;
+        }
+        self.current = (self.current - amount).max(0.0);
+        if self.current <= 0.0 {
+            self.is_alive = false;
+        }
+        true
+    }
+
+    pub fn heal(&mut self, amount: f32) {
+        if self.is_alive {
+            self.current = (self.current + amount).min(self.max);
+        }
+    }
+}
+
+impl Default for HealthStrand {
+    fn default() -> Self {
+        Self::new(100.0)
+    }
+}
+
+/// Geometric shape for combat hitboxes and hurtboxes.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub enum CombatShape {
+    CylinderY { radius: f32, height: f32 },
+    Aabb { half_extents: Vec3 },
+    Sphere { radius: f32 },
+}
+
+/// Vulnerable hurtbox strand attached to damagable entities.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct HurtboxStrand {
+    pub shape: CombatShape,
+    pub offset: Vec3,
+    pub team: u8,
+    pub invulnerability_timer: f32,
+    pub poise: f32,
+}
+
+impl HurtboxStrand {
+    pub fn cylinder(radius: f32, height: f32, team: u8) -> Self {
+        Self {
+            shape: CombatShape::CylinderY { radius, height },
+            offset: Vec3::ZERO,
+            team,
+            invulnerability_timer: 0.0,
+            poise: 10.0,
+        }
+    }
+}
+
+impl Default for HurtboxStrand {
+    fn default() -> Self {
+        Self::cylinder(0.5, 1.8, 0)
+    }
+}
+
+/// Active damaging hitbox strand spawned during attacks or attached to melee swings / projectiles.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct HitboxStrand {
+    pub shape: CombatShape,
+    pub offset: Vec3,
+    pub team: u8,
+    pub owner: EntityId,
+    pub damage: f32,
+    pub knockback: Vec3,
+    pub hitstun: f32,
+    pub lifetime: f32,
+    pub already_hit: Vec<EntityId>,
+}
+
+impl HitboxStrand {
+    pub fn new(owner: EntityId, team: u8, damage: f32, knockback: Vec3, shape: CombatShape, lifetime: f32) -> Self {
+        Self {
+            shape,
+            offset: Vec3::ZERO,
+            team,
+            owner,
+            damage,
+            knockback,
+            hitstun: 0.2,
+            lifetime,
+            already_hit: Vec::new(),
+        }
+    }
+}
+
+/// Character Action State for real-time 2.5D combat.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub enum ActionState {
+    Idle,
+    Move { speed: f32 },
+    Dash { timer: f32, max_time: f32, direction: Vec2, speed: f32 },
+    Attack { combo_index: u32, timer: f32, max_time: f32, has_spawned_hitbox: bool },
+    Hurt { timer: f32, max_time: f32 },
+    Dead,
+}
+
+/// Action State strand managing inputs, dodge rolls, melee combos, and flipbook sync.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ActionStateStrand {
+    pub state: ActionState,
+    pub facing_direction: Vec2,
+    pub buffered_dash: Option<Vec2>,
+    pub buffered_attack: bool,
+    pub move_speed: f32,
+    pub dash_speed: f32,
+    pub dash_duration: f32,
+}
+
+impl Default for ActionStateStrand {
+    fn default() -> Self {
+        Self {
+            state: ActionState::Idle,
+            facing_direction: Vec2::new(0.0, 1.0),
+            buffered_dash: None,
+            buffered_attack: false,
+            move_speed: 6.0,
+            dash_speed: 14.0,
+            dash_duration: 0.22,
+        }
+    }
+}
 

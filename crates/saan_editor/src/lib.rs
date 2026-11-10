@@ -439,7 +439,7 @@ impl ApplicationHandler for SaanEditorApp {
                         fps: 1.0 / dt,
                         frame_ms: dt * 1000.0,
                         loom_taut: true,
-                        active_system_count: 11,
+                        active_system_count: self.loom.inspect_tension().system_count,
                         focus_distance_delta: 0.0,
                         aperture_blur_delta: 0.0,
                         sun_intensity_delta: 0.0,
