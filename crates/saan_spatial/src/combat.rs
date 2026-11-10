@@ -120,19 +120,21 @@ impl WeftSystem for ActionStateWeftSystem {
             let mut flipbook_start_end: Option<(u32, u32)> = None;
 
             if let Some(action) = world.get_strand_mut::<ActionStateStrand>(entity) {
-                // Buffer inputs if interactive input is active
-                if let Some(inp) = input {
-                    if inp.dash {
-                        let move_dir = Vec2::new(inp.move_axis.x, inp.move_axis.z);
-                        let dir = if move_dir.length_squared() > 1e-4 {
-                            move_dir.normalize()
-                        } else {
-                            action.facing_direction
-                        };
-                        action.buffered_dash = Some(dir);
-                    }
-                    if inp.attack {
-                        action.buffered_attack = true;
+                // Buffer inputs if interactive input is active and entity is player (team == 0)
+                if team == 0 {
+                    if let Some(inp) = input {
+                        if inp.dash {
+                            let move_dir = Vec2::new(inp.move_axis.x, inp.move_axis.z);
+                            let dir = if move_dir.length_squared() > 1e-4 {
+                                move_dir.normalize()
+                            } else {
+                                action.facing_direction
+                            };
+                            action.buffered_dash = Some(dir);
+                        }
+                        if inp.attack {
+                            action.buffered_attack = true;
+                        }
                     }
                 }
 
@@ -155,12 +157,14 @@ impl WeftSystem for ActionStateWeftSystem {
                                 max_time: 0.28,
                                 has_spawned_hitbox: false,
                             };
-                        } else if let Some(inp) = input {
-                            let move_dir = Vec2::new(inp.move_axis.x, inp.move_axis.z);
-                            if move_dir.length_squared() > 1e-4 {
-                                let norm = move_dir.normalize();
-                                action.facing_direction = norm;
-                                action.state = ActionState::Move { speed: action.move_speed };
+                        } else if team == 0 {
+                            if let Some(inp) = input {
+                                let move_dir = Vec2::new(inp.move_axis.x, inp.move_axis.z);
+                                if move_dir.length_squared() > 1e-4 {
+                                    let norm = move_dir.normalize();
+                                    action.facing_direction = norm;
+                                    action.state = ActionState::Move { speed: action.move_speed };
+                                }
                             }
                         }
                     }
@@ -182,15 +186,17 @@ impl WeftSystem for ActionStateWeftSystem {
                                 max_time: 0.28,
                                 has_spawned_hitbox: false,
                             };
-                        } else if let Some(inp) = input {
-                            let move_dir = Vec2::new(inp.move_axis.x, inp.move_axis.z);
-                            if move_dir.length_squared() > 1e-4 {
-                                let norm = move_dir.normalize();
-                                action.facing_direction = norm;
-                                new_vel = Some(Vec3::new(norm.x * speed, 0.0, norm.y * speed));
-                            } else {
-                                action.state = ActionState::Idle;
-                                new_vel = Some(Vec3::ZERO);
+                        } else if team == 0 {
+                            if let Some(inp) = input {
+                                let move_dir = Vec2::new(inp.move_axis.x, inp.move_axis.z);
+                                if move_dir.length_squared() > 1e-4 {
+                                    let norm = move_dir.normalize();
+                                    action.facing_direction = norm;
+                                    new_vel = Some(Vec3::new(norm.x * speed, 0.0, norm.y * speed));
+                                } else {
+                                    action.state = ActionState::Idle;
+                                    new_vel = Some(Vec3::ZERO);
+                                }
                             }
                         }
                     }
