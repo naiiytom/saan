@@ -5,6 +5,9 @@
 //! - **OBJ / 3D Mesh Shaver (`MeshAssetData`)**: Parses 3D vertex/normal/UV geometry from Wavefront `.obj` or embedded mesh descriptors.
 //! - **Procedural Sprite Sheet Generator (`RgbaTexture`)**: Generates crisp RGBA8 pixel-art sprite sheets for HD-2D testing and fallback rendering.
 
+pub mod vox;
+pub use vox::{get_or_load_vox_mesh, VoxModel, VoxelPoint};
+
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::Path;
@@ -22,6 +25,8 @@ pub enum AssetError {
     Json(#[from] serde_json::Error),
     #[error("Invalid 3D mesh format: {0}")]
     InvalidMesh(String),
+    #[error("Invalid MagicaVoxel .vox format: {0}")]
+    InvalidVox(String),
 }
 
 /// Raw RGBA8 texture data ready for GPU upload.
@@ -206,12 +211,18 @@ impl AsepriteSheet {
     }
 }
 
-/// 3D vertex parsed by the 3D Mesh Shaver.
+pub fn default_vertex_color() -> [f32; 4] {
+    [1.0, 1.0, 1.0, 1.0]
+}
+
+/// 3D vertex parsed by the 3D Mesh Shaver or Greedy Voxel Mesher.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct ShavedVertex3D {
     pub position: Vec3,
     pub normal: Vec3,
     pub uv: Vec2,
+    #[serde(default = "default_vertex_color")]
+    pub color: [f32; 4],
 }
 
 /// Loaded 3D mesh geometry ready for tessellation in `saan_render`.
@@ -287,6 +298,7 @@ impl MeshAssetData {
                             position: pos,
                             normal,
                             uv,
+                            color: [1.0, 1.0, 1.0, 1.0],
                         });
                     }
 
@@ -361,5 +373,67 @@ mod tests {
         assert_eq!(tex.width, 64);
         assert_eq!(tex.height, 24);
         assert_eq!(tex.pixels.len(), 64 * 24 * 4);
+    }
+
+    #[test]
+    fn parses_and_greedy_meshes_vox_cube() {
+        let mut model = VoxModel::new("solid_slab", 4, 4, 1);
+        // Create a 4x4x1 flat slab of 16 voxels with identical color index 10
+        for x in 0..4 {
+            for y in 0..4 {
+                model.voxels.push(VoxelPoint {
+                    x,
+                    y,
+                    z: 0,
+                    color_index: 10,
+                });
+            }
+        }
+
+        // Test roundtrip encoding and parsing
+        let encoded = model.encode_vox_bytes();
+        let parsed = VoxModel::from_bytes("parsed_slab", &encoded).unwrap();
+        assert_eq!(parsed.size_x, 4);
+        assert_eq!(parsed.size_y, 4);
+        assert_eq!(parsed.size_z, 1);
+        assert_eq!(parsed.voxels.len(), 16);
+
+        // Greedy mesh: A 4x4 flat top face would be 16 quads (32 triangles) naive.
+        // With greedy meshing, the top face merges into 1 single quad (2 triangles)!
+        // Bottom face: 1 quad (2 triangles).
+        // 4 side faces (each 4x1): 4 quads (8 triangles).
+        // Total quads = 1 + 1 + 4 = 6 quads (12 triangles = 36 vertices)!
+        let mesh = parsed.to_greedy_mesh(0.1, Vec3::new(0.5, 0.0, 0.5));
+        assert_eq!(mesh.vertices.len(), 36);
+
+        // Top normal vertices have normal +Y
+        let top_verts: Vec<_> = mesh.vertices.iter().filter(|v| v.normal == Vec3::Y).collect();
+        assert_eq!(top_verts.len(), 6); // 1 quad = 2 triangles = 6 vertices!
+    }
+
+    #[test]
+    fn procedural_ancient_shrine_greedy_meshes_cleanly() {
+        let shrine = VoxModel::procedural_ancient_shrine();
+        assert!(!shrine.voxels.is_empty());
+
+        let bytes = shrine.encode_vox_bytes();
+        assert!(!bytes.is_empty());
+
+        let candidates = ["assets/voxels", "../../assets/voxels"];
+        for dir in candidates {
+            if Path::new(dir).exists() {
+                let p = Path::new(dir).join("ancient_shrine.vox");
+                let _ = fs::write(p, &bytes);
+            }
+        }
+
+        let mesh = shrine.to_greedy_mesh(0.1, Vec3::new(0.5, 0.0, 0.5));
+        assert!(!mesh.vertices.is_empty());
+        // Verify all vertices have valid normals and finite coordinates
+        for v in &mesh.vertices {
+            assert!(v.position.is_finite());
+            assert!(v.normal.is_finite());
+            assert!(v.color[3] > 0.0);
+        }
     }
 }

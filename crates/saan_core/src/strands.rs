@@ -186,6 +186,8 @@ pub enum MeshPrimitive {
     Cube { size: Vec3 },
     /// Voxel/diorama block or custom glTF asset path.
     Asset { path: String },
+    /// Native MagicaVoxel (.vox) asset path and scale with automatic 3D greedy meshing.
+    Voxel { path: String, scale: f32 },
 }
 
 /// Surface material properties for 3D geometry.

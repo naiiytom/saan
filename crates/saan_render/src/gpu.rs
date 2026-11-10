@@ -390,13 +390,52 @@ fn append_mesh_primitive(out: &mut Vec<InterlacedVertex>, item: &MeshDrawItem) {
                 push_quad(out, p0, p1, p2, p3, world_n, color, 0.0);
             }
         }
-        MeshPrimitive::Asset { .. } => {
-            let h = Vec3::splat(0.5);
-            let p0 = m.transform_point3(Vec3::new(-h.x, 0.0, h.z));
-            let p1 = m.transform_point3(Vec3::new(h.x, 0.0, h.z));
-            let p2 = m.transform_point3(Vec3::new(h.x, 1.0, h.z));
-            let p3 = m.transform_point3(Vec3::new(-h.x, 1.0, h.z));
-            push_quad(out, p0, p1, p2, p3, Vec3::Z, color, 0.0);
+        MeshPrimitive::Voxel { ref path, scale } => {
+            let mesh = saan_asset::get_or_load_vox_mesh(path, scale);
+            for v in &mesh.vertices {
+                let world_pos = m.transform_point3(v.position);
+                let world_normal = m.transform_vector3(v.normal).normalize_or_zero();
+                out.push(InterlacedVertex {
+                    world_pos: world_pos.to_array(),
+                    world_normal: world_normal.to_array(),
+                    uv: v.uv.to_array(),
+                    color: [
+                        v.color[0] * color[0],
+                        v.color[1] * color[1],
+                        v.color[2] * color[2],
+                        v.color[3] * color[3],
+                    ],
+                    kind: 0.0,
+                });
+            }
+        }
+        MeshPrimitive::Asset { ref path } => {
+            if path.ends_with(".vox") {
+                let mesh = saan_asset::get_or_load_vox_mesh(path, 0.1);
+                for v in &mesh.vertices {
+                    let world_pos = m.transform_point3(v.position);
+                    let world_normal = m.transform_vector3(v.normal).normalize_or_zero();
+                    out.push(InterlacedVertex {
+                        world_pos: world_pos.to_array(),
+                        world_normal: world_normal.to_array(),
+                        uv: v.uv.to_array(),
+                        color: [
+                            v.color[0] * color[0],
+                            v.color[1] * color[1],
+                            v.color[2] * color[2],
+                            v.color[3] * color[3],
+                        ],
+                        kind: 0.0,
+                    });
+                }
+            } else {
+                let h = Vec3::splat(0.5);
+                let p0 = m.transform_point3(Vec3::new(-h.x, 0.0, h.z));
+                let p1 = m.transform_point3(Vec3::new(h.x, 0.0, h.z));
+                let p2 = m.transform_point3(Vec3::new(h.x, 1.0, h.z));
+                let p3 = m.transform_point3(Vec3::new(-h.x, 1.0, h.z));
+                push_quad(out, p0, p1, p2, p3, Vec3::Z, color, 0.0);
+            }
         }
     }
 }
@@ -1126,5 +1165,30 @@ mod tests {
         let frame_with_hud = RenderLoom::hd2d_pipeline().extract_frame(&world);
         let (_, sprite_verts_with_hud) = tessellate_frame(&frame_with_hud);
         assert!(sprite_verts_with_hud.len() > 30);
+
+        // Add a MagicaVoxel entity and verify greedy meshed vertices are emitted
+        let vox_entity = world.spawn();
+        world.weave_strand(
+            vox_entity,
+            saan_core::Transform::from_xyz(0.0, 1.0, 0.0),
+        );
+        world.weave_strand(
+            vox_entity,
+            saan_core::Mesh3D {
+                primitive: MeshPrimitive::Voxel {
+                    path: "assets/voxels/ancient_shrine.vox".to_string(),
+                    scale: 0.1,
+                },
+                material: saan_core::Material3D::default(),
+                casts_shadow: true,
+                receives_shadow: true,
+            },
+        );
+        let frame_with_vox = RenderLoom::hd2d_pipeline().extract_frame(&world);
+        let (mesh_verts_vox, _) = tessellate_frame(&frame_with_vox);
+        assert!(mesh_verts_vox.len() > 42);
+        // Verify vertex colors are retained from the voxel palette
+        let has_colored_vert = mesh_verts_vox.iter().any(|v| v.color[0] != 1.0 || v.color[1] != 1.0);
+        assert!(has_colored_vert);
     }
 }

@@ -214,6 +214,36 @@ impl EditorState {
                     )
                     .weave_strand(entity, ParticleEmitter3D::spirit_wisps());
             }
+            "voxel_shrine" | "shrine" => {
+                world
+                    .weave_strand(entity, NameStrand(format!("voxel_shrine_{entity}")))
+                    .weave_strand(entity, Transform::from_xyz(pos.x, pos.y, pos.z))
+                    .weave_strand(
+                        entity,
+                        Mesh3D {
+                            primitive: MeshPrimitive::Voxel {
+                                path: "assets/voxels/ancient_shrine.vox".to_string(),
+                                scale: 0.1,
+                            },
+                            material: Material3D {
+                                name: "shrine_palette".to_string(),
+                                base_color: Vec4::ONE,
+                                roughness: 0.8,
+                                metallic: 0.1,
+                            },
+                            casts_shadow: true,
+                            receives_shadow: true,
+                        },
+                    )
+                    .weave_strand(
+                        entity,
+                        PointLight {
+                            color: Vec3::new(1.0, 0.85, 0.4),
+                            intensity: 4.5,
+                            radius: 6.0,
+                        },
+                    );
+            }
             _ => {
                 world
                     .weave_strand(entity, NameStrand(format!("prop_cube_{entity}")))
@@ -475,6 +505,12 @@ mod tests {
         assert_eq!(state.selected_entity, Some(entity));
         assert!(world.get_strand::<Sprite25D>(entity).is_some());
 
+        let shrine_entity = state.spawn_prefab("voxel_shrine", &mut world);
+        assert_eq!(state.selected_entity, Some(shrine_entity));
+        let mesh = world.get_strand::<Mesh3D>(shrine_entity).unwrap();
+        assert!(matches!(mesh.primitive, MeshPrimitive::Voxel { .. }));
+
+        state.select(Some(entity));
         state.translate_selected(Vec3::new(1.0, 0.0, 2.0), &mut world);
         let trans = world.get_strand::<Transform>(entity).unwrap();
         assert_eq!(trans.translation, Vec3::new(1.0, 0.0, 2.0));
