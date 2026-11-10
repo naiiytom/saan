@@ -27,8 +27,8 @@ enum Commands {
         /// Overwrite existing scene file if present
         #[arg(long)]
         force: bool,
-        /// Scene template ("diorama_sandbox" or "default")
-        #[arg(long, default_value = "diorama_sandbox")]
+        /// Scene template ("arpg_clash", "diorama_sandbox", or "default")
+        #[arg(long, default_value = "arpg_clash")]
         template: String,
     },
     /// Inspect a .saan scene pattern and check Loom + Render Graph tension
@@ -83,9 +83,22 @@ enum Commands {
 
 fn resolve_scene_path(path: PathBuf) -> PathBuf {
     if path.extension().and_then(|e| e.to_str()) == Some("saan") {
+        if !path.exists() && path == PathBuf::from("scene.saan") {
+            if PathBuf::from("assets/scenes/arpg_shrine_clash.saan").exists() {
+                return PathBuf::from("assets/scenes/arpg_shrine_clash.saan");
+            }
+            if PathBuf::from("assets/scenes/diorama_sandbox.saan").exists() {
+                return PathBuf::from("assets/scenes/diorama_sandbox.saan");
+            }
+        }
         path
     } else {
-        path.join("scene.saan")
+        let nested = path.join("scene.saan");
+        if nested.exists() {
+            nested
+        } else {
+            path
+        }
     }
 }
 
@@ -106,17 +119,22 @@ fn main() -> Result<()> {
                 );
             }
 
-            let title = scene_path
-                .parent()
-                .and_then(|p| p.file_name())
-                .and_then(|n| n.to_str())
-                .filter(|s| !s.is_empty())
-                .unwrap_or("Saan HD-2D Diorama");
+            let default_title = match template.as_str() {
+                "default" => "Saan HD-2D Diorama",
+                "diorama_sandbox" => "Saan Unified Diorama Sandbox",
+                _ => "Saan ARPG: Ancient Shrine Clash",
+            };
 
-            let pattern = if template == "default" {
-                ScenePattern::default_hd2d_diorama(title)
-            } else {
-                ScenePattern::diorama_sandbox(title)
+            let title = scene_path
+                .file_stem()
+                .and_then(|n| n.to_str())
+                .filter(|s| !s.is_empty() && *s != "scene")
+                .unwrap_or(default_title);
+
+            let pattern = match template.as_str() {
+                "default" => ScenePattern::default_hd2d_diorama(title),
+                "diorama_sandbox" => ScenePattern::diorama_sandbox(title),
+                _ => ScenePattern::arpg_shrine_clash(title),
             };
             pattern
                 .save_to_file(&scene_path)
@@ -241,10 +259,10 @@ fn main() -> Result<()> {
                     .with_context(|| format!("Failed to load scene '{}'", scene_path.display()))?
             } else {
                 println!(
-                    "No '{}' found; weaving built-in HD-2D Diorama showcase scene...",
+                    "No '{}' found; weaving flagship ARPG Ancient Shrine Clash scene...",
                     scene_path.display()
                 );
-                ScenePattern::default_hd2d_diorama("Saan HD-2D Courtyard")
+                ScenePattern::arpg_shrine_clash("Saan ARPG: Ancient Shrine Clash")
             };
 
             println!("Launching Saan wgpu + winit viewport: '{}'", pattern.title);
@@ -275,10 +293,10 @@ fn main() -> Result<()> {
                     .with_context(|| format!("Failed to load scene '{}'", scene_path.display()))?
             } else {
                 println!(
-                    "No '{}' found; creating default HD-2D Diorama scene for editor...",
+                    "No '{}' found; loading flagship ARPG Ancient Shrine Clash scene for editor...",
                     scene_path.display()
                 );
-                ScenePattern::default_hd2d_diorama("Saan HD-2D Diorama")
+                ScenePattern::arpg_shrine_clash("Saan ARPG: Ancient Shrine Clash")
             };
 
             println!("Launching Saan Craft Editor: '{}'", pattern.title);

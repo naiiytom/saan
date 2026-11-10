@@ -12,8 +12,8 @@ use std::time::SystemTime;
 use glam::Vec3;
 use rhai::{Engine, AST, Scope};
 use saan_core::{
-    EntityId, EventWeftStrand, GameplayEvent, Loom, LoomError, ScriptStrand, Transform, Velocity,
-    WeftSystem, World,
+    EntityId, EventWeftStrand, GameplayEvent, HurtboxStrand, Loom, LoomError, ScriptStrand,
+    Transform, Velocity, WeftSystem, World,
 };
 use thiserror::Error;
 
@@ -93,9 +93,10 @@ impl ScriptHost {
         dt: f32,
         pos: Vec3,
         vel: Vec3,
+        target_pos: Vec3,
         events: &[GameplayEvent],
     ) -> (Option<Vec3>, Option<Vec3>, Vec<String>) {
-        let mut ctx = ScriptCtx::new(pos, vel, dt);
+        let mut ctx = ScriptCtx::new(pos, vel, dt, target_pos);
         let scope = self.scopes.entry(entity).or_insert_with(Scope::new);
         scope.set_value("ctx", ctx.clone());
 
@@ -145,15 +146,17 @@ pub struct ScriptCtx {
     pub pos: Vec3,
     pub vel: Vec3,
     pub dt: f32,
+    pub target_pos: Vec3,
     pub emitted_events: Vec<String>,
 }
 
 impl ScriptCtx {
-    pub fn new(pos: Vec3, vel: Vec3, dt: f32) -> Self {
+    pub fn new(pos: Vec3, vel: Vec3, dt: f32, target_pos: Vec3) -> Self {
         Self {
             pos,
             vel,
             dt,
+            target_pos,
             emitted_events: Vec::new(),
         }
     }
@@ -177,6 +180,7 @@ pub fn register_saan_api(engine: &mut Engine) {
     engine.register_type_with_name::<ScriptCtx>("ScriptCtx")
         .register_get_set("pos", |ctx: &mut ScriptCtx| ctx.pos, |ctx: &mut ScriptCtx, val: Vec3| ctx.pos = val)
         .register_get_set("vel", |ctx: &mut ScriptCtx| ctx.vel, |ctx: &mut ScriptCtx, val: Vec3| ctx.vel = val)
+        .register_get_set("target_pos", |ctx: &mut ScriptCtx| ctx.target_pos, |ctx: &mut ScriptCtx, val: Vec3| ctx.target_pos = val)
         .register_get("dt", |ctx: &mut ScriptCtx| ctx.dt as rhai::FLOAT)
         .register_fn("set_pos", |ctx: &mut ScriptCtx, x: rhai::FLOAT, y: rhai::FLOAT, z: rhai::FLOAT| {
             ctx.pos = Vec3::new(x as f32, y as f32, z as f32);
@@ -223,7 +227,7 @@ impl WeftSystem for ScriptingWeftSystem {
     }
 
     fn reads(&self) -> &[&'static str] {
-        &["EventWeftStrand", "ScriptStrand"]
+        &["EventWeftStrand", "ScriptStrand", "HurtboxStrand"]
     }
 
     fn writes(&self) -> &[&'static str] {
@@ -231,6 +235,13 @@ impl WeftSystem for ScriptingWeftSystem {
     }
 
     fn weave(&mut self, world: &mut World, dt: f32) {
+        let target_pos = world
+            .query::<HurtboxStrand>()
+            .find(|(_, h)| h.team == 0)
+            .and_then(|(e, _)| world.get_strand::<Transform>(e))
+            .map(|t| t.translation)
+            .unwrap_or(Vec3::new(0.0, 0.0, 2.5));
+
         let mut scripts = Vec::new();
 
         for (entity, script) in world.query::<ScriptStrand>() {
@@ -264,7 +275,7 @@ impl WeftSystem for ScriptingWeftSystem {
             };
 
             let (new_pos, new_vel, emitted) =
-                host.execute_entity_tick(entity, &ast, dt, pos, vel, &events);
+                host.execute_entity_tick(entity, &ast, dt, pos, vel, target_pos, &events);
 
             if let Some(p) = new_pos {
                 transform_updates.push((entity, p));
