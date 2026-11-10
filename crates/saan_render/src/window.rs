@@ -145,11 +145,16 @@ impl SaanApp {
             zoom_delta -= 0.8;
         }
 
+        let attack = self.pressed_keys.contains(&KeyCode::KeyJ) || self.pressed_keys.contains(&KeyCode::KeyZ);
+        let dash = self.pressed_keys.contains(&KeyCode::KeyK) || self.pressed_keys.contains(&KeyCode::ShiftLeft);
+
         if let Some(input) = self.world.get_strand_mut::<InputStrand>(self.input_entity) {
             input.move_axis = move_axis;
             input.orbit_yaw = orbit_yaw;
             input.zoom_delta = zoom_delta;
             input.paused = self.paused;
+            input.attack = attack;
+            input.dash = dash;
         }
     }
 

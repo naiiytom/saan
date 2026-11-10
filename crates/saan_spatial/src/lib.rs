@@ -8,9 +8,11 @@
 //! - [`GridMap3D`]: 3D multi-height tilemap grid with discrete A* pathfinding and continuous flow-field navigation.
 //! - [`AgentCommandingWeftSystem`]: Drives hero action, RTS unit squads, and turn-based tactical pawns.
 
+pub mod combat;
 pub mod commanding;
 pub mod navigation;
 
+pub use combat::{combat_shapes_overlap, spawn_melee_hitbox, ActionStateWeftSystem, CombatWeftSystem};
 pub use commanding::{
     select_entities_in_rect, AgentCommandingWeftSystem, AgentController, ControllerMode,
     SelectionStrand, UnitOrder,
@@ -23,19 +25,26 @@ use saan_core::{
     NameStrand, Sprite25D, Transform, WeftSystem, World,
 };
 
-/// Registers the standard 2.5D/3D spatial collision, navigation, commanding and camera occlusion Weft systems onto `loom`,
-/// wired in deterministic topological order (`agent_commanding_weft` -> `velocity_kinematics` -> `spatial_collision_3d` -> `camera_occlusion_fade`).
+/// Registers the standard 2.5D/3D spatial collision, navigation, commanding, combat and camera occlusion Weft systems onto `loom`,
+/// wired in deterministic topological order with zero tension hazards.
 pub fn register_spatial_systems(loom: &mut Loom) -> Result<(), LoomError> {
     loom.add_system(AgentCommandingWeftSystem)?;
+    loom.add_system(ActionStateWeftSystem)?;
     loom.add_system(SpatialCollisionWeftSystem)?;
+    loom.add_system(CombatWeftSystem)?;
     loom.add_system(CameraOcclusionWeftSystem)?;
 
-    loom.add_ordering("agent_commanding_weft", "velocity_kinematics")?;
+    loom.add_ordering("agent_commanding_weft", "action_state_weft")?;
+    loom.add_ordering("action_state_weft", "velocity_kinematics")?;
+    if loom.has_system("flipbook_sprite_animation") {
+        loom.add_ordering("action_state_weft", "flipbook_sprite_animation")?;
+    }
     loom.add_ordering("velocity_kinematics", "spatial_collision_3d")?;
-    loom.add_ordering("spatial_collision_3d", "camera_occlusion_fade")?;
-    loom.add_ordering("spatial_collision_3d", "positional_audio_3d")?;
+    loom.add_ordering("spatial_collision_3d", "combat_resolution_weft")?;
+    loom.add_ordering("combat_resolution_weft", "camera_occlusion_fade")?;
+    loom.add_ordering("combat_resolution_weft", "positional_audio_3d")?;
     if loom.has_system("particle_simulation_weft") {
-        loom.add_ordering("spatial_collision_3d", "particle_simulation_weft")?;
+        loom.add_ordering("combat_resolution_weft", "particle_simulation_weft")?;
     }
     if loom.has_system("fog_of_war_update") {
         loom.add_ordering("spatial_collision_3d", "fog_of_war_update")?;
@@ -276,7 +285,7 @@ mod tests {
 
         let report = loom.inspect_tension();
         assert!(report.is_taut(), "Expected taut Loom DAG, got hazards: {:?}", report.hazards);
-        assert_eq!(report.system_count, 9);
+        assert_eq!(report.system_count, 11);
     }
 
     #[test]

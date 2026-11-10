@@ -248,7 +248,7 @@ fn main() -> Result<()> {
             };
 
             println!("Launching Saan wgpu + winit viewport: '{}'", pattern.title);
-            println!("Controls: [WASD / Arrows] Pan | [Q / E] Orbit | [R / F] Zoom | [Space] Pause | [Esc] Quit");
+            println!("Controls: [WASD] Move | [J / Z] Melee Attack Combo | [K / Shift] Dash Roll | [Q / E] Orbit | [R / F] Zoom | [Space] Pause | [Esc] Quit");
             println!("Woven Inspector: [Tab / F1] Toggle HUD | [1 / 2] Cycle Entity | [[ / ]] DOF Focus | [- / =] DOF Blur | [, / .] Sun Light");
 
             let watch_path = scene_path.exists().then_some(scene_path);
