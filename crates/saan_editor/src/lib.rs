@@ -11,11 +11,12 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Instant;
 
+use egui::{Color32, ProgressBar, RichText, ScrollArea, Slider};
 use glam::{Vec2, Vec3, Vec4};
 use saan_core::{
-    BillboardMode, EntityId, InputStrand, InspectorStrand, Loom, Material3D, Mesh3D,
-    MeshPrimitive, NameStrand, ParticleEmitter3D, PointLight, ScenePattern, Sprite25D, Transform,
-    Velocity, World,
+    ActionState, ActionStateStrand, BillboardMode, EntityId, EventWeftStrand, HealthStrand,
+    InputStrand, Loom, Material3D, Mesh3D, MeshPrimitive, NameStrand,
+    ParticleEmitter3D, PointLight, ScenePattern, Sprite25D, Transform, Velocity, World,
 };
 use saan_render::gpu::GpuRenderer;
 use saan_render::RenderLoom;
@@ -300,6 +301,9 @@ pub struct SaanEditorApp {
     pub editor_state: EditorState,
     pub window: Option<Arc<Window>>,
     pub gpu: Option<GpuRenderer>,
+    pub egui_ctx: egui::Context,
+    pub egui_winit: Option<egui_winit::State>,
+    pub egui_renderer: Option<egui_wgpu::Renderer>,
     pub frame_counter: u32,
     pub last_frame: Instant,
     pub input_entity: EntityId,
@@ -320,6 +324,7 @@ impl SaanEditorApp {
 
         let editor_state = EditorState::new(pattern.title.clone(), options.scene_path.clone());
         let render_loom = RenderLoom::hd2d_pipeline();
+        let egui_ctx = egui::Context::default();
 
         Self {
             options,
@@ -329,6 +334,9 @@ impl SaanEditorApp {
             editor_state,
             window: None,
             gpu: None,
+            egui_ctx,
+            egui_winit: None,
+            egui_renderer: None,
             frame_counter: 0,
             last_frame: Instant::now(),
             input_entity,
@@ -350,11 +358,38 @@ impl ApplicationHandler for SaanEditorApp {
         let window = Arc::new(event_loop.create_window(window_attrs).expect("Failed to create window"));
         let gpu = GpuRenderer::new(Arc::clone(&window)).expect("Failed to initialize wgpu renderer");
 
+        let viewport_id = self.egui_ctx.viewport_id();
+        let egui_winit = egui_winit::State::new(
+            self.egui_ctx.clone(),
+            viewport_id,
+            &window,
+            Some(window.scale_factor() as f32),
+            None,
+            None,
+        );
+
+        let egui_renderer = egui_wgpu::Renderer::new(
+            &gpu.device,
+            gpu.config.format,
+            None,
+            1,
+            false,
+        );
+
         self.window = Some(window);
         self.gpu = Some(gpu);
+        self.egui_winit = Some(egui_winit);
+        self.egui_renderer = Some(egui_renderer);
     }
 
     fn window_event(&mut self, event_loop: &ActiveEventLoop, _window_id: WindowId, event: WindowEvent) {
+        if let (Some(win), Some(egui_winit)) = (&self.window, &mut self.egui_winit) {
+            let res = egui_winit.on_window_event(win, &event);
+            if res.consumed {
+                return;
+            }
+        }
+
         match event {
             WindowEvent::CloseRequested => {
                 event_loop.exit();
@@ -429,23 +464,64 @@ impl ApplicationHandler for SaanEditorApp {
                     let _ = self.loom.step(&mut self.world, dt);
                 }
 
-                if let Some(ref mut gpu) = self.gpu {
-                    let mut frame = self.render_loom.extract_frame(&self.world);
+                if let (Some(gpu), Some(win), Some(egui_winit), Some(egui_renderer)) =
+                    (&mut self.gpu, &self.window, &mut self.egui_winit, &mut self.egui_renderer)
+                {
+                    let frame = self.render_loom.extract_frame(&self.world);
 
-                    // Overlay Editor Panels via Inspector HUD
-                    frame.inspector = Some(InspectorStrand {
-                        visible: true,
-                        selected_entity_idx: self.editor_state.selected_entity.map(|e| e.index as usize).unwrap_or(0),
-                        fps: 1.0 / dt,
-                        frame_ms: dt * 1000.0,
-                        loom_taut: true,
-                        active_system_count: self.loom.inspect_tension().system_count,
-                        focus_distance_delta: 0.0,
-                        aperture_blur_delta: 0.0,
-                        sun_intensity_delta: 0.0,
+                    let raw_input = egui_winit.take_egui_input(win);
+                    let full_output = self.egui_ctx.run(raw_input, |ctx| {
+                        build_editor_ui(ctx, &mut self.editor_state, &mut self.world, &self.loom);
                     });
 
-                    let _ = gpu.render(&frame, self.frame_counter as f32 * dt);
+                    egui_winit.handle_platform_output(win, full_output.platform_output);
+                    let clipped_primitives = self.egui_ctx.tessellate(full_output.shapes, full_output.pixels_per_point);
+
+                    if let Ok(output) = gpu.surface.get_current_texture() {
+                        let view = output.texture.create_view(&wgpu::TextureViewDescriptor::default());
+
+                        let mut encoder = gpu.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                            label: Some("Saan Editor Composite Encoder"),
+                        });
+
+                        gpu.encode_frame(&frame, &mut encoder, &view, self.frame_counter as f32 * dt);
+
+                        let screen_descriptor = egui_wgpu::ScreenDescriptor {
+                            size_in_pixels: [gpu.config.width, gpu.config.height],
+                            pixels_per_point: win.scale_factor() as f32,
+                        };
+
+                        for (id, delta) in &full_output.textures_delta.set {
+                            egui_renderer.update_texture(&gpu.device, &gpu.queue, *id, delta);
+                        }
+                        egui_renderer.update_buffers(&gpu.device, &gpu.queue, &mut encoder, &clipped_primitives, &screen_descriptor);
+
+                        {
+                            let rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                                label: Some("Egui Workstation Overlay Pass"),
+                                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                                    view: &view,
+                                    resolve_target: None,
+                                    ops: wgpu::Operations {
+                                        load: wgpu::LoadOp::Load,
+                                        store: wgpu::StoreOp::Store,
+                                    },
+                                })],
+                                depth_stencil_attachment: None,
+                                timestamp_writes: None,
+                                occlusion_query_set: None,
+                            });
+                            let mut rpass = rpass.forget_lifetime();
+                            egui_renderer.render(&mut rpass, &clipped_primitives, &screen_descriptor);
+                        }
+
+                        gpu.queue.submit(std::iter::once(encoder.finish()));
+                        output.present();
+
+                        for id in &full_output.textures_delta.free {
+                            egui_renderer.free_texture(id);
+                        }
+                    }
                 }
 
                 if let Some(max) = self.options.max_frames {
@@ -462,6 +538,235 @@ impl ApplicationHandler for SaanEditorApp {
             _ => {}
         }
     }
+}
+
+/// Builds the docked egui workstation interface for the Saan Craft Editor.
+pub fn build_editor_ui(
+    ctx: &egui::Context,
+    state: &mut EditorState,
+    world: &mut World,
+    loom: &Loom,
+) {
+    // 1. Top Panel (Toolbar & Status)
+    egui::TopBottomPanel::top("top_panel").show(ctx, |ui| {
+        ui.horizontal(|ui| {
+            ui.heading(RichText::new("Saan Craft Loom").color(Color32::from_rgb(220, 180, 90)));
+            ui.separator();
+
+            let play_label = if state.simulation_mode == SimulationMode::Playing { "⏸ Pause" } else { "▶ Play" };
+            if ui.button(play_label).clicked() {
+                state.simulation_mode = match state.simulation_mode {
+                    SimulationMode::Playing => SimulationMode::Paused,
+                    SimulationMode::Paused | SimulationMode::StepOnce => SimulationMode::Playing,
+                };
+            }
+
+            if ui.button("⏭ Step").clicked() {
+                state.simulation_mode = SimulationMode::StepOnce;
+            }
+
+            ui.separator();
+            ui.selectable_value(&mut state.active_tool, EditorTool::Select, "🔍 Select");
+            ui.selectable_value(&mut state.active_tool, EditorTool::TileBrush, "🖌 Tile Brush");
+            ui.selectable_value(&mut state.active_tool, EditorTool::MoveGizmo, "📐 Move Gizmo");
+
+            ui.separator();
+            if ui.button("💾 Save .saan").clicked() {
+                let _ = state.save_to_file(world);
+            }
+
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                let tension = loom.inspect_tension();
+                if tension.is_taut() {
+                    ui.label(RichText::new(format!("● Taut ({} systems)", tension.system_count)).color(Color32::from_rgb(80, 200, 120)));
+                } else {
+                    ui.label(RichText::new(format!("⚠ Hazards ({})", tension.hazards.len())).color(Color32::from_rgb(240, 80, 80)));
+                }
+            });
+        });
+    });
+
+    // 2. Left Panel (Outliner & Palettes)
+    egui::SidePanel::left("left_panel").default_width(220.0).show(ctx, |ui| {
+        ui.heading("Entity Outliner");
+        let entities: Vec<(EntityId, String)> = world
+            .query::<NameStrand>()
+            .map(|(e, name)| (e, name.0.clone()))
+            .collect();
+
+        ScrollArea::vertical().max_height(160.0).show(ui, |ui| {
+            for (entity, name) in entities {
+                let is_selected = state.selected_entity == Some(entity);
+                if ui.selectable_label(is_selected, format!("#{}: {}", entity, name)).clicked() {
+                    state.select(Some(entity));
+                }
+            }
+        });
+
+        ui.separator();
+        ui.heading("Prefabs");
+        ui.horizontal_wrapped(|ui| {
+            if ui.button("+ Hero").clicked() {
+                state.spawn_prefab("sprite_hero", world);
+            }
+            if ui.button("+ Shrine").clicked() {
+                state.spawn_prefab("voxel_shrine", world);
+            }
+            if ui.button("+ Lantern").clicked() {
+                state.spawn_prefab("spirit_lantern", world);
+            }
+            if ui.button("+ Cube").clicked() {
+                state.spawn_prefab("stone_cube", world);
+            }
+        });
+
+        ui.separator();
+        ui.heading("3D Tile Palette");
+        ui.label(format!("Tile: {:?}", state.brush_tile_type));
+        ui.horizontal_wrapped(|ui| {
+            for tile in [
+                TileType::Grass,
+                TileType::Stone,
+                TileType::Dirt,
+                TileType::Water,
+                TileType::Ledge,
+                TileType::Ramp,
+                TileType::Blocked,
+            ] {
+                if ui.selectable_label(state.brush_tile_type == tile, format!("{:?}", tile)).clicked() {
+                    state.brush_tile_type = tile;
+                }
+            }
+        });
+        ui.add(Slider::new(&mut state.brush_elevation, 0.0..=8.0).text("Elevation"));
+        if ui.button("Paint Tile").clicked() {
+            let (gx, gz) = state.brush_grid_pos;
+            state.paint_tile_at(gx, gz);
+        }
+    });
+
+    // 3. Right Panel (Strand Component Inspector)
+    egui::SidePanel::right("right_panel").default_width(260.0).show(ctx, |ui| {
+        ui.heading("Strand Inspector");
+        if let Some(selected) = state.selected_entity {
+            ui.label(format!("Entity: #{}", selected));
+
+            // NameStrand
+            if let Some(name) = world.get_strand_mut::<NameStrand>(selected) {
+                ui.horizontal(|ui| {
+                    ui.label("Name:");
+                    ui.text_edit_singleline(&mut name.0);
+                });
+            }
+
+            // Transform
+            if let Some(trans) = world.get_strand_mut::<Transform>(selected) {
+                ui.collapsing("Transform", |ui| {
+                    ui.horizontal(|ui| {
+                        ui.label("X");
+                        ui.add(egui::DragValue::new(&mut trans.translation.x).speed(0.1));
+                        ui.label("Y");
+                        ui.add(egui::DragValue::new(&mut trans.translation.y).speed(0.1));
+                        ui.label("Z");
+                        ui.add(egui::DragValue::new(&mut trans.translation.z).speed(0.1));
+                    });
+                    ui.horizontal(|ui| {
+                        ui.label("Scale");
+                        ui.add(egui::DragValue::new(&mut trans.scale.x).speed(0.05));
+                        ui.add(egui::DragValue::new(&mut trans.scale.y).speed(0.05));
+                        ui.add(egui::DragValue::new(&mut trans.scale.z).speed(0.05));
+                    });
+                });
+            }
+
+            // HealthStrand
+            if let Some(health) = world.get_strand_mut::<HealthStrand>(selected) {
+                ui.collapsing("Health", |ui| {
+                    let frac = (health.current / health.max.max(1.0)).clamp(0.0, 1.0);
+                    ui.add(ProgressBar::new(frac).text(format!("{:.0} / {:.0}", health.current, health.max)));
+                    ui.horizontal(|ui| {
+                        if ui.button("-20 Dmg").clicked() {
+                            health.take_damage(20.0);
+                        }
+                        if ui.button("+20 Heal").clicked() {
+                            health.heal(20.0);
+                        }
+                    });
+                });
+            }
+
+            // ActionStateStrand
+            if let Some(action) = world.get_strand_mut::<ActionStateStrand>(selected) {
+                ui.collapsing("Action State", |ui| {
+                    ui.label(format!("State: {:?}", action.state));
+                    ui.label(format!("Facing: [{:.2}, {:.2}]", action.facing_direction.x, action.facing_direction.y));
+                    if ui.button("Trigger Dash").clicked() {
+                        action.state = ActionState::Dash {
+                            timer: action.dash_duration,
+                            max_time: action.dash_duration,
+                            direction: action.facing_direction,
+                            speed: action.dash_speed,
+                        };
+                    }
+                    if ui.button("Trigger Attack").clicked() {
+                        action.state = ActionState::Attack {
+                            combo_index: 1,
+                            timer: 0.28,
+                            max_time: 0.28,
+                            has_spawned_hitbox: false,
+                        };
+                    }
+                });
+            }
+
+            // Sprite25D
+            if let Some(sprite) = world.get_strand_mut::<Sprite25D>(selected) {
+                ui.collapsing("Sprite25D", |ui| {
+                    ui.label(format!("Texture: {}", sprite.texture_id));
+                    ui.checkbox(&mut sprite.casts_shadow, "Casts Shadow");
+                    ui.label(format!("Billboard: {:?}", sprite.billboard));
+                });
+            }
+
+            // Mesh3D
+            if let Some(mesh) = world.get_strand_mut::<Mesh3D>(selected) {
+                ui.collapsing("Mesh3D", |ui| {
+                    ui.label(format!("Primitive: {:?}", mesh.primitive));
+                    ui.checkbox(&mut mesh.casts_shadow, "Casts Shadow");
+                    ui.checkbox(&mut mesh.receives_shadow, "Receives Shadow");
+                });
+            }
+
+            // Despawn button
+            ui.separator();
+            if ui.button(RichText::new("🗑 Delete Entity").color(Color32::from_rgb(240, 80, 80))).clicked() {
+                world.despawn(selected);
+                state.select(None);
+            }
+        } else {
+            ui.label("No entity selected.\nSelect an entity from the Outliner or click in viewport.");
+        }
+    });
+
+    // 4. Bottom Panel (Event Console & Status)
+    egui::TopBottomPanel::bottom("bottom_panel").default_height(80.0).show(ctx, |ui| {
+        ui.horizontal(|ui| {
+            ui.heading("Event Weft & Status");
+            ui.separator();
+            ui.label(&state.status_message);
+        });
+
+        if let Some((_, bus)) = world.query::<EventWeftStrand>().next() {
+            ScrollArea::vertical().max_height(50.0).show(ui, |ui| {
+                for ev in bus.current_events.iter().rev().take(6) {
+                    ui.monospace(format!("~ {:?}", ev));
+                }
+            });
+        }
+    });
+
+    // 5. Central Panel (Transparent Diorama Viewport Overlay)
+    egui::CentralPanel::default().frame(egui::Frame::none()).show(ctx, |_ui| {});
 }
 
 /// Launches the interactive Saan Craft Editor window.
@@ -514,5 +819,30 @@ mod tests {
         state.translate_selected(Vec3::new(1.0, 0.0, 2.0), &mut world);
         let trans = world.get_strand::<Transform>(entity).unwrap();
         assert_eq!(trans.translation, Vec3::new(1.0, 0.0, 2.0));
+    }
+
+    #[test]
+    fn egui_workstation_ui_builds_and_tessellates_cleanly() {
+        let pattern = ScenePattern::default_hd2d_diorama("Egui Test Scene");
+        let mut world = World::new();
+        pattern.weave_into_world(&mut world);
+
+        let mut loom = Loom::with_default_gameplay();
+        let _ = saan_spatial::register_spatial_systems(&mut loom);
+
+        let mut state = EditorState::new("Egui Test Scene", None);
+        // Select first entity to populate the inspector
+        let first_e = world.query::<NameStrand>().next().map(|(e, _)| e);
+        state.select(first_e);
+
+        let ctx = egui::Context::default();
+        let raw_input = egui::RawInput::default();
+        let full_output = ctx.run(raw_input, |ctx| {
+            build_editor_ui(ctx, &mut state, &mut world, &loom);
+        });
+
+        assert!(!full_output.shapes.is_empty(), "Egui UI should emit panel shapes");
+        let primitives = ctx.tessellate(full_output.shapes, 1.0);
+        assert!(!primitives.is_empty(), "Egui should tessellate into clipped primitives");
     }
 }
