@@ -816,7 +816,7 @@ impl Default for ActionStateStrand {
     fn default() -> Self {
         Self {
             state: ActionState::Idle,
-            facing_direction: Vec2::new(0.0, 1.0),
+            facing_direction: Vec2::new(0.0, -1.0),
             buffered_dash: None,
             buffered_attack: false,
             move_speed: 6.0,

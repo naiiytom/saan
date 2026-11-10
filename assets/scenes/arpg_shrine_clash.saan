@@ -4515,7 +4515,7 @@
         "state": "Idle",
         "facing_direction": [
           0.0,
-          1.0
+          -1.0
         ],
         "buffered_dash": null,
         "buffered_attack": false,
@@ -4630,7 +4630,7 @@
         "state": "Idle",
         "facing_direction": [
           0.0,
-          1.0
+          -1.0
         ],
         "buffered_dash": null,
         "buffered_attack": false,
@@ -4745,7 +4745,7 @@
         "state": "Idle",
         "facing_direction": [
           0.0,
-          1.0
+          -1.0
         ],
         "buffered_dash": null,
         "buffered_attack": false,
