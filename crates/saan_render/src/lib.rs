@@ -14,8 +14,8 @@ use petgraph::algo::toposort;
 use petgraph::graph::DiGraph;
 use saan_core::{
     BillboardMode, CameraProjection, CameraRig, DirectionalLight, EntityId, FogOfWarStrand,
-    InspectorStrand, Mesh3D, MeshPrimitive, NameStrand, ParticleData, ParticleEmitter3D,
-    PointLight, Sprite25D, Transform, World,
+    HealthStrand, HurtboxStrand, InspectorStrand, Mesh3D, MeshPrimitive, NameStrand, ParticleData,
+    ParticleEmitter3D, PointLight, Sprite25D, Transform, World,
 };
 use serde::{Deserialize, Serialize};
 
@@ -73,6 +73,7 @@ pub struct RenderFrame {
     pub inspector: Option<InspectorStrand>,
     pub particles: Vec<ParticleData>,
     pub fog_of_war: Option<FogOfWarStrand>,
+    pub health_bars: Vec<(Vec3, f32, u8)>,
     pub entity_count: usize,
 }
 
@@ -250,6 +251,21 @@ impl RenderLoom {
 
         let fog_of_war = world.query::<FogOfWarStrand>().next().map(|(_, f)| f.clone());
 
+        let mut health_bars = Vec::new();
+        for (entity, health) in world.query::<HealthStrand>() {
+            if health.is_alive
+                && health.current > 0.0
+                && let Some(trans) = world.get_strand::<Transform>(entity)
+            {
+                let frac = (health.current / health.max.max(1.0)).clamp(0.0, 1.0);
+                let team = world
+                    .get_strand::<HurtboxStrand>(entity)
+                    .map(|h| h.team)
+                    .unwrap_or(0);
+                health_bars.push((trans.translation + Vec3::new(0.0, 2.05, 0.0), frac, team));
+            }
+        }
+
         RenderFrame {
             camera,
             view_proj,
@@ -265,6 +281,7 @@ impl RenderLoom {
             inspector,
             particles,
             fog_of_war,
+            health_bars,
             entity_count: world.entity_count(),
         }
     }

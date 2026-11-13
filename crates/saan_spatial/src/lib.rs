@@ -12,7 +12,10 @@ pub mod combat;
 pub mod commanding;
 pub mod navigation;
 
-pub use combat::{combat_shapes_overlap, spawn_melee_hitbox, ActionStateWeftSystem, CombatWeftSystem};
+pub use combat::{
+    combat_shapes_overlap, spawn_melee_hitbox, spawn_spell_projectile, ActionStateWeftSystem,
+    CombatWeftSystem,
+};
 pub use commanding::{
     select_entities_in_rect, AgentCommandingWeftSystem, AgentController, ControllerMode,
     SelectionStrand, UnitOrder,

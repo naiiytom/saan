@@ -47,8 +47,8 @@ pub struct GpuSceneUniforms {
     pub camera_pos: [f32; 4],
     pub sun_dir_intensity: [f32; 4],
     pub sun_color: [f32; 4],
-    pub point_light_pos_radius: [f32; 4],
-    pub point_light_color_intensity: [f32; 4],
+    pub point_lights_pos_radius: [[f32; 4]; 4],
+    pub point_lights_color_intensity: [[f32; 4]; 4],
     pub diorama_params: [f32; 4],
     pub fow_bounds: [f32; 4],
 }
@@ -67,12 +67,12 @@ impl GpuSceneUniforms {
         let light_proj = glam::Mat4::orthographic_rh(-16.0, 16.0, -16.0, 16.0, 1.0, 50.0);
         let light_view_proj = (light_proj * light_view).to_cols_array_2d();
 
-        let (pt_pos, pt_radius, pt_col, pt_intensity) = frame
-            .lighting
-            .point_lights
-            .first()
-            .map(|(pos, l)| (*pos, l.radius, l.color, l.intensity))
-            .unwrap_or((Vec3::ZERO, 0.0, Vec3::ZERO, 0.0));
+        let mut point_lights_pos_radius = [[0.0f32; 4]; 4];
+        let mut point_lights_color_intensity = [[0.0f32; 4]; 4];
+        for (i, (pos, l)) in frame.lighting.point_lights.iter().take(4).enumerate() {
+            point_lights_pos_radius[i] = [pos.x, pos.y, pos.z, l.radius];
+            point_lights_color_intensity[i] = [l.color.x, l.color.y, l.color.z, l.intensity];
+        }
 
         let (focus_dist, aperture_blur) = match frame.camera.projection {
             CameraProjection::DioramaTilt {
@@ -106,13 +106,13 @@ impl GpuSceneUniforms {
                 (sun_intensity + sun_delta).max(0.0),
             ],
             sun_color: [sun_col.x, sun_col.y, sun_col.z, 1.0],
-            point_light_pos_radius: [pt_pos.x, pt_pos.y, pt_pos.z, pt_radius],
-            point_light_color_intensity: [pt_col.x, pt_col.y, pt_col.z, pt_intensity],
+            point_lights_pos_radius,
+            point_lights_color_intensity,
             diorama_params: [
                 (focus_dist + focus_delta).max(1.0),
                 (aperture_blur + blur_delta).clamp(0.0, 2.0),
                 elapsed_secs,
-                0.0,
+                0.45,
             ],
             fow_bounds,
         }
@@ -145,6 +145,11 @@ pub fn tessellate_frame(frame: &RenderFrame) -> (Vec<InterlacedVertex>, Vec<Inte
         append_particle_quad(&mut sprite_vertices, p, &frame.camera);
     }
 
+    // ARPG Floating 3D Health Bars above heroes and enemies (projected into NDC so they stay crisp)
+    for &(world_pos, frac, team) in &frame.health_bars {
+        append_health_bar_quads(&mut sprite_vertices, world_pos, frac, team, &frame.view_proj);
+    }
+
     // Phase 6: Woven Inspector HUD Overlay (rendered in 2D NDC when InspectorStrand::visible is true)
     if let Some(ref inspector) = frame.inspector
         && inspector.visible
@@ -166,6 +171,40 @@ fn push_ndc_rect(out: &mut Vec<InterlacedVertex>, x0: f32, y0: f32, x1: f32, y1:
         color,
         5.0,
     );
+}
+
+fn append_health_bar_quads(
+    out: &mut Vec<InterlacedVertex>,
+    world_pos: Vec3,
+    frac: f32,
+    team: u8,
+    view_proj: &glam::Mat4,
+) {
+    let clip = *view_proj * world_pos.extend(1.0);
+    if clip.w <= 0.1 {
+        return;
+    }
+    let ndc = clip.truncate() / clip.w;
+    if ndc.x.abs() > 1.2 || ndc.y.abs() > 1.2 {
+        return;
+    }
+    let half_w = 0.045;
+    let half_h = 0.008;
+    let x0 = ndc.x - half_w;
+    let x1 = ndc.x + half_w;
+    let y0 = ndc.y - half_h;
+    let y1 = ndc.y + half_h;
+
+    // Dark backing frame
+    push_ndc_rect(out, x0, y0, x1, y1, [0.06, 0.07, 0.10, 0.88]);
+    // Foreground health fill (emerald for player team 0, crimson for enemy team 1+)
+    let fill_color = if team == 0 {
+        [0.24, 0.86, 0.48, 0.96]
+    } else {
+        [0.92, 0.26, 0.28, 0.96]
+    };
+    let fill_x1 = x0 + (x1 - x0) * frac.clamp(0.0, 1.0);
+    push_ndc_rect(out, x0, y0, fill_x1, y1, fill_color);
 }
 
 fn append_woven_inspector_hud(
@@ -410,31 +449,22 @@ fn append_mesh_primitive(out: &mut Vec<InterlacedVertex>, item: &MeshDrawItem) {
             }
         }
         MeshPrimitive::Asset { ref path } => {
-            if path.ends_with(".vox") {
-                let mesh = saan_asset::get_or_load_vox_mesh(path, 0.1);
-                for v in &mesh.vertices {
-                    let world_pos = m.transform_point3(v.position);
-                    let world_normal = m.transform_vector3(v.normal).normalize_or_zero();
-                    out.push(InterlacedVertex {
-                        world_pos: world_pos.to_array(),
-                        world_normal: world_normal.to_array(),
-                        uv: v.uv.to_array(),
-                        color: [
-                            v.color[0] * color[0],
-                            v.color[1] * color[1],
-                            v.color[2] * color[2],
-                            v.color[3] * color[3],
-                        ],
-                        kind: 0.0,
-                    });
-                }
-            } else {
-                let h = Vec3::splat(0.5);
-                let p0 = m.transform_point3(Vec3::new(-h.x, 0.0, h.z));
-                let p1 = m.transform_point3(Vec3::new(h.x, 0.0, h.z));
-                let p2 = m.transform_point3(Vec3::new(h.x, 1.0, h.z));
-                let p3 = m.transform_point3(Vec3::new(-h.x, 1.0, h.z));
-                push_quad(out, p0, p1, p2, p3, Vec3::Z, color, 0.0);
+            let mesh = saan_asset::get_or_load_mesh_asset(path);
+            for v in &mesh.vertices {
+                let world_pos = m.transform_point3(v.position);
+                let world_normal = m.transform_vector3(v.normal).normalize_or_zero();
+                out.push(InterlacedVertex {
+                    world_pos: world_pos.to_array(),
+                    world_normal: world_normal.to_array(),
+                    uv: v.uv.to_array(),
+                    color: [
+                        v.color[0] * color[0],
+                        v.color[1] * color[1],
+                        v.color[2] * color[2],
+                        v.color[3] * color[3],
+                    ],
+                    kind: 0.0,
+                });
             }
         }
     }
@@ -1200,5 +1230,14 @@ mod tests {
         // Verify vertex colors are retained from the voxel palette
         let has_colored_vert = mesh_verts_vox.iter().any(|v| v.color[0] != 1.0 || v.color[1] != 1.0);
         assert!(has_colored_vert);
+
+        // Verify ARPG scene extracts multiple point lights and floating 3D health bars
+        let arpg = ScenePattern::arpg_shrine_clash("ARPG Render Test");
+        let mut arpg_world = World::new();
+        arpg.weave_into_world(&mut arpg_world);
+        let arpg_frame = RenderLoom::hd2d_pipeline().extract_frame(&arpg_world);
+        assert_eq!(arpg_frame.health_bars.len(), 3);
+        let uniforms = GpuSceneUniforms::from_frame(&arpg_frame, 1.0);
+        assert!(uniforms.point_lights_pos_radius[0][3] > 0.0);
     }
 }

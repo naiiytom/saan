@@ -6,11 +6,11 @@
 //! - [`CombatWeftSystem`]: Evaluates geometric overlaps between active [`HitboxStrand`] and vulnerable [`HurtboxStrand`],
 //!   applies damage to [`HealthStrand`], injects knockback impulse into [`Velocity`], grants i-frames, and publishes [`GameplayEvent::CombatHit`].
 
-use glam::{Vec2, Vec3};
+use glam::{Vec2, Vec3, Vec4};
 use saan_core::{
-    ActionState, ActionStateStrand, CameraRig, CombatShape, EntityId, EventWeftStrand, FlipbookStrand,
-    GameplayEvent, HealthStrand, HitboxStrand, HurtboxStrand, InputStrand, NameStrand, Transform,
-    Velocity, WeftSystem, World,
+    ActionState, ActionStateStrand, BillboardMode, CameraRig, CombatShape, EntityId,
+    EventWeftStrand, FlipbookStrand, GameplayEvent, HealthStrand, HitboxStrand, HurtboxStrand,
+    InputStrand, NameStrand, PointLight, Sprite25D, Transform, Velocity, WeftSystem, World,
 };
 
 /// Evaluates whether two combat shapes overlap in 3D world space.
@@ -87,6 +87,72 @@ pub fn spawn_melee_hitbox(
     hitbox_entity
 }
 
+/// Spawns a ranged spell projectile orb that flies along `facing`, illuminates the scene with a dynamic `PointLight`,
+/// and damages/knocks back the first enemy hurtbox it hits.
+pub fn spawn_spell_projectile(
+    world: &mut World,
+    owner: EntityId,
+    team: u8,
+    owner_pos: Vec3,
+    facing: Vec2,
+) -> EntityId {
+    let orb = world.spawn();
+    let dir2 = if facing.length_squared() > 1e-4 {
+        facing.normalize()
+    } else {
+        Vec2::new(0.0, -1.0)
+    };
+    let forward = Vec3::new(dir2.x, 0.0, dir2.y);
+    let start_pos = owner_pos + forward * 0.9 + Vec3::new(0.0, 0.9, 0.0);
+    let speed = 13.0;
+
+    let mut hitbox = HitboxStrand::new(
+        owner,
+        team,
+        35.0,
+        forward * 8.0 + Vec3::new(0.0, 1.2, 0.0),
+        CombatShape::Sphere { radius: 0.55 },
+        1.6,
+    );
+    hitbox.destroy_on_hit = true;
+
+    world
+        .weave_strand(orb, NameStrand("spirit_spell_orb".to_string()))
+        .weave_strand(orb, Transform::from_xyz(start_pos.x, start_pos.y, start_pos.z))
+        .weave_strand(
+            orb,
+            Velocity {
+                linear: forward * speed,
+                angular_y: 0.0,
+            },
+        )
+        .weave_strand(orb, hitbox)
+        .weave_strand(
+            orb,
+            Sprite25D {
+                texture_id: "sprites/spirit_wisp.png".to_string(),
+                size: Vec2::new(0.65, 0.65),
+                pivot: Vec2::new(0.5, 0.5),
+                billboard: BillboardMode::Spherical,
+                normal_map_id: None,
+                casts_shadow: false,
+                tint: Vec4::new(0.35, 0.85, 1.0, 0.98),
+                depth_bias: 0.02,
+                uv_rect: [0.0, 0.0, 1.0, 1.0],
+            },
+        )
+        .weave_strand(
+            orb,
+            PointLight {
+                color: Vec3::new(0.35, 0.85, 1.0),
+                intensity: 5.5,
+                radius: 5.0,
+            },
+        );
+
+    orb
+}
+
 /// Action state machine Weft system for responsive ARPG character controls.
 pub struct ActionStateWeftSystem;
 
@@ -116,8 +182,9 @@ impl WeftSystem for ActionStateWeftSystem {
             (Vec3::new(0.0, 0.0, -1.0), Vec3::new(1.0, 0.0, 0.0))
         };
 
-        // Collect new attack spawns to execute after iteration
+        // Collect new attack and spell spawns to execute after iteration
         let mut attacks_to_spawn: Vec<(EntityId, u8, Vec3, Vec2, u32)> = Vec::new();
+        let mut spells_to_spawn: Vec<(EntityId, u8, Vec3, Vec2)> = Vec::new();
 
         // 1. Process player/entity action state updates
         let entities: Vec<EntityId> = world.query::<ActionStateStrand>().map(|(e, _)| e).collect();
@@ -146,7 +213,15 @@ impl WeftSystem for ActionStateWeftSystem {
                         if inp.attack {
                             action.buffered_attack = true;
                         }
+                        if inp.cast_spell {
+                            action.buffered_spell = true;
+                        }
                     }
+                }
+
+                if action.buffered_spell {
+                    action.buffered_spell = false;
+                    spells_to_spawn.push((entity, team, trans_pos, action.facing_direction));
                 }
 
                 match action.state {
@@ -288,9 +363,15 @@ impl WeftSystem for ActionStateWeftSystem {
             }
         }
 
-        // 2. Spawn hitboxes triggered by attack states
+        // 2. Spawn hitboxes and spell projectiles triggered by action states
         for (owner, team, pos, facing, combo) in attacks_to_spawn {
             spawn_melee_hitbox(world, owner, team, pos, facing, combo);
+            if combo == 3 {
+                spawn_spell_projectile(world, owner, team, pos, facing);
+            }
+        }
+        for (owner, team, pos, facing) in spells_to_spawn {
+            spawn_spell_projectile(world, owner, team, pos, facing);
         }
     }
 }
@@ -335,7 +416,7 @@ impl WeftSystem for CombatWeftSystem {
             })
             .collect();
 
-        let mut hits_to_apply: Vec<(EntityId, EntityId, f32, Vec3, f32, Vec3, String, String)> = Vec::new();
+        let mut hits_to_apply: Vec<(EntityId, EntityId, EntityId, f32, Vec3, f32, Vec3, String, String)> = Vec::new();
 
         for (hitbox_entity, mut hitbox, hit_pos) in hitboxes {
             for (target_entity, hurtbox, hurt_pos, target_name) in &hurtboxes {
@@ -355,6 +436,7 @@ impl WeftSystem for CombatWeftSystem {
 
                     hits_to_apply.push((
                         hitbox_entity,
+                        hitbox.owner,
                         *target_entity,
                         hitbox.damage,
                         hitbox.knockback,
@@ -363,6 +445,9 @@ impl WeftSystem for CombatWeftSystem {
                         attacker_name,
                         target_name.clone(),
                     ));
+                    if hitbox.destroy_on_hit {
+                        break;
+                    }
                 }
             }
 
@@ -372,15 +457,22 @@ impl WeftSystem for CombatWeftSystem {
             }
         }
 
-        // 4. Apply damage, knockback, and publish events
+        // 4. Apply damage, knockback, soul-siphon heal on kill, and publish events
         let mut events_to_publish: Vec<GameplayEvent> = Vec::new();
 
-        for (_hitbox_e, target_e, damage, knockback, hitstun, hit_pos, attacker_name, target_name) in hits_to_apply {
+        for (_hitbox_e, owner_e, target_e, damage, knockback, hitstun, hit_pos, attacker_name, target_name) in hits_to_apply {
             let mut is_dead = false;
 
             if let Some(health) = world.get_strand_mut::<HealthStrand>(target_e) {
+                let was_alive = health.is_alive;
                 health.take_damage(damage);
-                is_dead = !health.is_alive;
+                is_dead = was_alive && !health.is_alive;
+            }
+
+            if is_dead
+                && let Some(owner_health) = world.get_strand_mut::<HealthStrand>(owner_e)
+            {
+                owner_health.heal(15.0);
             }
 
             if let Some(hurtbox) = world.get_strand_mut::<HurtboxStrand>(target_e) {
@@ -420,11 +512,11 @@ impl WeftSystem for CombatWeftSystem {
             }
         }
 
-        // 5. Age and despawn expired hitboxes
+        // 5. Age and despawn expired or consumed projectile hitboxes
         let mut expired_hitboxes: Vec<EntityId> = Vec::new();
         for (e, hitbox) in world.query_mut::<HitboxStrand>() {
             hitbox.lifetime -= dt;
-            if hitbox.lifetime <= 0.0 {
+            if hitbox.lifetime <= 0.0 || (hitbox.destroy_on_hit && !hitbox.already_hit.is_empty()) {
                 expired_hitboxes.push(e);
             }
         }
@@ -595,5 +687,35 @@ mod tests {
         let vel = world.get_strand::<Velocity>(hero).unwrap();
         // Velocity along Z is negative (away from camera, up on screen towards shrine)
         assert!(vel.linear.z < -5.0);
+    }
+
+    #[test]
+    fn spell_projectile_hits_enemy_despawns_on_hit_and_siphons_health_on_kill() {
+        let mut world = World::new();
+        let hero = world.spawn();
+        let mut hero_hp = HealthStrand::new(100.0);
+        hero_hp.take_damage(30.0); // 70/100 HP
+        world
+            .weave_strand(hero, NameStrand("HeroWanderer".to_string()))
+            .weave_strand(hero, Transform::from_xyz(0.0, 0.0, 0.0))
+            .weave_strand(hero, hero_hp);
+
+        let enemy = world.spawn();
+        world
+            .weave_strand(enemy, NameStrand("WispStalker".to_string()))
+            .weave_strand(enemy, Transform::from_xyz(0.0, 0.0, 1.0))
+            .weave_strand(enemy, HealthStrand::new(30.0))
+            .weave_strand(enemy, HurtboxStrand::cylinder(0.6, 1.8, 1));
+
+        let orb = spawn_spell_projectile(&mut world, hero, 0, Vec3::ZERO, Vec2::new(0.0, 1.0));
+        assert!(world.get_strand::<PointLight>(orb).is_some());
+
+        let mut combat_sys = CombatWeftSystem;
+        combat_sys.weave(&mut world, 0.016);
+
+        // Enemy slain by 35 spell damage, hero healed +15 HP (70 -> 85), and spell orb despawned on hit
+        assert!(!world.get_strand::<HealthStrand>(enemy).unwrap().is_alive);
+        assert_eq!(world.get_strand::<HealthStrand>(hero).unwrap().current, 85.0);
+        assert!(world.get_strand::<HitboxStrand>(orb).is_none());
     }
 }

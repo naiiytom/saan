@@ -73,6 +73,9 @@ pub struct InputStrand {
     /// Whether the dash / dodge roll action was triggered this frame.
     #[serde(default)]
     pub dash: bool,
+    /// Whether the ranged spell / projectile action was triggered this frame.
+    #[serde(default)]
+    pub cast_spell: bool,
 }
 
 /// How a 2.5D sprite orientates itself inside the 3D world relative to the active camera.
@@ -771,6 +774,8 @@ pub struct HitboxStrand {
     pub hitstun: f32,
     pub lifetime: f32,
     pub already_hit: Vec<EntityId>,
+    #[serde(default)]
+    pub destroy_on_hit: bool,
 }
 
 impl HitboxStrand {
@@ -785,6 +790,7 @@ impl HitboxStrand {
             hitstun: 0.2,
             lifetime,
             already_hit: Vec::new(),
+            destroy_on_hit: false,
         }
     }
 }
@@ -807,6 +813,8 @@ pub struct ActionStateStrand {
     pub facing_direction: Vec2,
     pub buffered_dash: Option<Vec2>,
     pub buffered_attack: bool,
+    #[serde(default)]
+    pub buffered_spell: bool,
     pub move_speed: f32,
     pub dash_speed: f32,
     pub dash_duration: f32,
@@ -819,6 +827,7 @@ impl Default for ActionStateStrand {
             facing_direction: Vec2::new(0.0, -1.0),
             buffered_dash: None,
             buffered_attack: false,
+            buffered_spell: false,
             move_speed: 6.0,
             dash_speed: 14.0,
             dash_duration: 0.22,
