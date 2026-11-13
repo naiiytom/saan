@@ -147,6 +147,7 @@ impl SaanApp {
 
         let attack = self.pressed_keys.contains(&KeyCode::KeyJ) || self.pressed_keys.contains(&KeyCode::KeyZ);
         let dash = self.pressed_keys.contains(&KeyCode::KeyK) || self.pressed_keys.contains(&KeyCode::ShiftLeft);
+        let cast_spell = self.pressed_keys.contains(&KeyCode::KeyL) || self.pressed_keys.contains(&KeyCode::KeyX);
 
         if let Some(input) = self.world.get_strand_mut::<InputStrand>(self.input_entity) {
             input.move_axis = move_axis;
@@ -155,6 +156,7 @@ impl SaanApp {
             input.paused = self.paused;
             input.attack = attack;
             input.dash = dash;
+            input.cast_spell = cast_spell;
         }
     }
 

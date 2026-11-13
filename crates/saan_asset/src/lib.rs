@@ -8,9 +8,10 @@
 pub mod vox;
 pub use vox::{get_or_load_vox_mesh, VoxModel, VoxelPoint};
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use std::fs;
 use std::path::Path;
+use std::sync::{Arc, Mutex, OnceLock};
 
 use glam::{Vec2, Vec3};
 use saan_core::FlipbookStrand;
@@ -318,6 +319,270 @@ impl MeshAssetData {
             vertices,
         })
     }
+
+    /// Parses a glTF 2.0 JSON (`.gltf`) asset with embedded data-URI base64 buffers into triangle vertices.
+    pub fn from_gltf_str(name: impl Into<String>, gltf_json: &str) -> Result<Self, AssetError> {
+        #[derive(Deserialize)]
+        struct GltfRoot {
+            #[serde(default)]
+            buffers: Vec<GltfBuffer>,
+            #[serde(default, rename = "bufferViews")]
+            buffer_views: Vec<GltfBufferView>,
+            #[serde(default)]
+            accessors: Vec<GltfAccessor>,
+            #[serde(default)]
+            meshes: Vec<GltfMesh>,
+        }
+        #[derive(Deserialize)]
+        struct GltfBuffer {
+            #[serde(default)]
+            uri: Option<String>,
+        }
+        #[derive(Deserialize)]
+        struct GltfBufferView {
+            buffer: usize,
+            #[serde(default, rename = "byteOffset")]
+            byte_offset: usize,
+            #[serde(rename = "byteLength")]
+            byte_length: usize,
+            #[serde(default, rename = "byteStride")]
+            byte_stride: Option<usize>,
+        }
+        #[derive(Deserialize)]
+        struct GltfAccessor {
+            #[serde(rename = "bufferView")]
+            buffer_view: usize,
+            #[serde(default, rename = "byteOffset")]
+            byte_offset: usize,
+            #[serde(rename = "componentType")]
+            component_type: u32,
+            count: usize,
+        }
+        #[derive(Deserialize)]
+        struct GltfMesh {
+            #[serde(default)]
+            primitives: Vec<GltfPrimitive>,
+        }
+        #[derive(Deserialize)]
+        struct GltfPrimitive {
+            attributes: BTreeMap<String, usize>,
+            #[serde(default)]
+            indices: Option<usize>,
+        }
+
+        let root: GltfRoot = serde_json::from_str(gltf_json)?;
+        let mut raw_buffers: Vec<Vec<u8>> = Vec::with_capacity(root.buffers.len());
+        for buf in &root.buffers {
+            let uri = buf.uri.as_deref().unwrap_or("");
+            if let Some((_, b64)) = uri.split_once(";base64,") {
+                raw_buffers.push(decode_base64(b64)?);
+            } else {
+                return Err(AssetError::InvalidMesh(
+                    "glTF buffer must use embedded base64 data URI".into(),
+                ));
+            }
+        }
+
+        let slice_for = |acc: &GltfAccessor, elem_bytes: usize| -> Result<(&[u8], usize), AssetError> {
+            let view = root
+                .buffer_views
+                .get(acc.buffer_view)
+                .ok_or_else(|| AssetError::InvalidMesh("Invalid bufferView index".into()))?;
+            let buf = raw_buffers
+                .get(view.buffer)
+                .ok_or_else(|| AssetError::InvalidMesh("Invalid buffer index".into()))?;
+            let start = view.byte_offset + acc.byte_offset;
+            let end = (view.byte_offset + view.byte_length).min(buf.len());
+            if start > end {
+                return Err(AssetError::InvalidMesh("Accessor offset out of bounds".into()));
+            }
+            let stride = view.byte_stride.unwrap_or(elem_bytes).max(elem_bytes);
+            Ok((&buf[start..end], stride))
+        };
+
+        let read_vec3 = |acc_idx: usize| -> Result<Vec<Vec3>, AssetError> {
+            let acc = root
+                .accessors
+                .get(acc_idx)
+                .ok_or_else(|| AssetError::InvalidMesh("Missing VEC3 accessor".into()))?;
+            let (bytes, stride) = slice_for(acc, 12)?;
+            let mut out = Vec::with_capacity(acc.count);
+            for i in 0..acc.count {
+                let off = i * stride;
+                if off + 12 > bytes.len() {
+                    break;
+                }
+                let x = f32::from_le_bytes(bytes[off..off + 4].try_into().unwrap());
+                let y = f32::from_le_bytes(bytes[off + 4..off + 8].try_into().unwrap());
+                let z = f32::from_le_bytes(bytes[off + 8..off + 12].try_into().unwrap());
+                out.push(Vec3::new(x, y, z));
+            }
+            Ok(out)
+        };
+
+        let read_vec2 = |acc_idx: usize| -> Result<Vec<Vec2>, AssetError> {
+            let acc = root
+                .accessors
+                .get(acc_idx)
+                .ok_or_else(|| AssetError::InvalidMesh("Missing VEC2 accessor".into()))?;
+            let (bytes, stride) = slice_for(acc, 8)?;
+            let mut out = Vec::with_capacity(acc.count);
+            for i in 0..acc.count {
+                let off = i * stride;
+                if off + 8 > bytes.len() {
+                    break;
+                }
+                let u = f32::from_le_bytes(bytes[off..off + 4].try_into().unwrap());
+                let v = f32::from_le_bytes(bytes[off + 4..off + 8].try_into().unwrap());
+                out.push(Vec2::new(u, v));
+            }
+            Ok(out)
+        };
+
+        let mut vertices = Vec::new();
+        for mesh in &root.meshes {
+            for prim in &mesh.primitives {
+                let pos_idx = *prim
+                    .attributes
+                    .get("POSITION")
+                    .ok_or_else(|| AssetError::InvalidMesh("glTF primitive missing POSITION".into()))?;
+                let positions = read_vec3(pos_idx)?;
+                let normals = prim
+                    .attributes
+                    .get("NORMAL")
+                    .and_then(|&i| read_vec3(i).ok())
+                    .unwrap_or_default();
+                let uvs = prim
+                    .attributes
+                    .get("TEXCOORD_0")
+                    .and_then(|&i| read_vec2(i).ok())
+                    .unwrap_or_default();
+
+                let indices: Vec<usize> = if let Some(idx_acc_i) = prim.indices {
+                    let acc = root
+                        .accessors
+                        .get(idx_acc_i)
+                        .ok_or_else(|| AssetError::InvalidMesh("Missing index accessor".into()))?;
+                    let elem_size = match acc.component_type {
+                        5121 => 1,
+                        5123 => 2,
+                        5125 => 4,
+                        _ => return Err(AssetError::InvalidMesh("Unsupported glTF index componentType".into())),
+                    };
+                    let (bytes, stride) = slice_for(acc, elem_size)?;
+                    let mut out = Vec::with_capacity(acc.count);
+                    for i in 0..acc.count {
+                        let off = i * stride;
+                        if off + elem_size > bytes.len() {
+                            break;
+                        }
+                        let idx = match acc.component_type {
+                            5121 => bytes[off] as usize,
+                            5123 => u16::from_le_bytes(bytes[off..off + 2].try_into().unwrap()) as usize,
+                            _ => u32::from_le_bytes(bytes[off..off + 4].try_into().unwrap()) as usize,
+                        };
+                        out.push(idx);
+                    }
+                    out
+                } else {
+                    (0..positions.len()).collect()
+                };
+
+                for tri in indices.chunks_exact(3) {
+                    let p0 = positions.get(tri[0]).copied().unwrap_or(Vec3::ZERO);
+                    let p1 = positions.get(tri[1]).copied().unwrap_or(Vec3::ZERO);
+                    let p2 = positions.get(tri[2]).copied().unwrap_or(Vec3::ZERO);
+                    let flat_n = (p1 - p0).cross(p2 - p0).normalize_or_zero();
+
+                    for &vi in tri {
+                        let position = positions.get(vi).copied().unwrap_or(Vec3::ZERO);
+                        let normal = normals.get(vi).copied().unwrap_or(flat_n);
+                        let uv = uvs.get(vi).copied().unwrap_or(Vec2::ZERO);
+                        vertices.push(ShavedVertex3D {
+                            position,
+                            normal,
+                            uv,
+                            color: [1.0, 1.0, 1.0, 1.0],
+                        });
+                    }
+                }
+            }
+        }
+
+        Ok(Self {
+            name: name.into(),
+            vertices,
+        })
+    }
+}
+
+fn decode_base64(input: &str) -> Result<Vec<u8>, AssetError> {
+    let mut out = Vec::with_capacity(input.len() * 3 / 4);
+    let mut buf = 0u32;
+    let mut bits = 0u32;
+    for b in input.bytes() {
+        if b.is_ascii_whitespace() || b == b'=' {
+            continue;
+        }
+        let val = match b {
+            b'A'..=b'Z' => b - b'A',
+            b'a'..=b'z' => b - b'a' + 26,
+            b'0'..=b'9' => b - b'0' + 52,
+            b'+' => 62,
+            b'/' => 63,
+            _ => return Err(AssetError::InvalidMesh("Invalid base64 character in glTF buffer".into())),
+        };
+        buf = (buf << 6) | (val as u32);
+        bits += 6;
+        if bits >= 8 {
+            bits -= 8;
+            out.push(((buf >> bits) & 0xFF) as u8);
+        }
+    }
+    Ok(out)
+}
+
+static MESH_ASSET_CACHE: OnceLock<Mutex<HashMap<String, Arc<MeshAssetData>>>> = OnceLock::new();
+
+/// Loads and caches a 3D mesh asset (`.gltf`, `.obj`, or `.vox`) by path.
+pub fn get_or_load_mesh_asset(path: &str) -> Arc<MeshAssetData> {
+    let cache = MESH_ASSET_CACHE.get_or_init(|| Mutex::new(HashMap::new()));
+    if let Ok(guard) = cache.lock()
+        && let Some(existing) = guard.get(path)
+    {
+        return Arc::clone(existing);
+    }
+
+    let loaded = if path.ends_with(".vox") {
+        Arc::new(get_or_load_vox_mesh(path, 0.1))
+    } else {
+        let candidates = [path.to_string(), format!("../../{path}")];
+        let mut parsed = None;
+        for cand in &candidates {
+            if let Ok(raw) = fs::read_to_string(cand) {
+                parsed = if path.ends_with(".gltf") {
+                    MeshAssetData::from_gltf_str(path, &raw).ok()
+                } else {
+                    MeshAssetData::from_obj_str(path, &raw).ok()
+                };
+                if parsed.is_some() {
+                    break;
+                }
+            }
+        }
+        Arc::new(parsed.unwrap_or_else(|| {
+            MeshAssetData::from_obj_str(
+                path,
+                "v -0.5 0.0 0.5\nv 0.5 0.0 0.5\nv 0.0 1.2 0.0\nf 1 2 3",
+            )
+            .unwrap_or_default()
+        }))
+    };
+
+    if let Ok(mut guard) = cache.lock() {
+        guard.insert(path.to_string(), Arc::clone(&loaded));
+    }
+    loaded
 }
 
 #[cfg(test)]
@@ -435,5 +700,40 @@ mod tests {
             assert!(v.normal.is_finite());
             assert!(v.color[3] > 0.0);
         }
+    }
+
+    #[test]
+    fn parses_gltf_2_0_embedded_buffer_mesh() {
+        // 3 vertices (f32x3 = 36 bytes) + 3 u16 indices (6 bytes) = 42 bytes
+        // v0=(0,0,0), v1=(1,0,0), v2=(0,1,0), indices=[0,1,2]
+        // 16 'A's = 12 zero bytes (v0), then "AACAPwAAAAAAAAAA" = (1.0, 0.0, 0.0) (v1),
+        // then "AAAAAACAPwAAAAAA" = (0.0, 1.0, 0.0) (v2), then "AAEAAgAA" = u16 [0, 1, 2]
+        let gltf = r#"{
+            "asset": { "version": "2.0" },
+            "buffers": [{
+                "uri": "data:application/octet-stream;base64,AAAAAAAAAAAAAAAAAACAPwAAAAAAAAAAAAAAAAAAgD8AAAAAAAABAAIA",
+                "byteLength": 42
+            }],
+            "bufferViews": [
+                { "buffer": 0, "byteOffset": 0, "byteLength": 36 },
+                { "buffer": 0, "byteOffset": 36, "byteLength": 6 }
+            ],
+            "accessors": [
+                { "bufferView": 0, "componentType": 5126, "count": 3, "type": "VEC3" },
+                { "bufferView": 1, "componentType": 5123, "count": 3, "type": "SCALAR" }
+            ],
+            "meshes": [{
+                "primitives": [{
+                    "attributes": { "POSITION": 0 },
+                    "indices": 1
+                }]
+            }]
+        }"#;
+
+        let mesh = MeshAssetData::from_gltf_str("gltf_tri", gltf).unwrap();
+        assert_eq!(mesh.vertices.len(), 3);
+        assert_eq!(mesh.vertices[1].position, Vec3::new(1.0, 0.0, 0.0));
+        assert_eq!(mesh.vertices[2].position, Vec3::new(0.0, 1.0, 0.0));
+        assert_eq!(mesh.vertices[0].normal, Vec3::Z);
     }
 }

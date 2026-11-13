@@ -13,9 +13,9 @@ struct SceneUniforms {
     camera_pos: vec4<f32>,
     sun_dir_intensity: vec4<f32>,
     sun_color: vec4<f32>,
-    point_light_pos_radius: vec4<f32>,
-    point_light_color_intensity: vec4<f32>,
-    diorama_params: vec4<f32>, // x: focus_dist, y: aperture_blur, z: time, w: unused
+    point_lights_pos_radius: array<vec4<f32>, 4>,
+    point_lights_color_intensity: array<vec4<f32>, 4>,
+    diorama_params: vec4<f32>, // x: focus_dist, y: aperture_blur, z: time, w: bloom_strength
     fow_bounds: vec4<f32>,     // x: min_x, y: min_z, z: max_x, w: max_z
 };
 
@@ -188,18 +188,31 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let ambient = vec3<f32>(0.22, 0.25, 0.32);
     var lit = base_rgba.rgb * (ambient + scene.sun_color.rgb * (sun_ndl * scene.sun_dir_intensity.w * 0.45 * shadow_factor));
 
-    // 3D Point Light (Spirit Lantern illuminates both 3D ground/altar AND 2.5D sprites)
-    let to_pt = scene.point_light_pos_radius.xyz - in.world_pos;
-    let dist = length(to_pt);
-    let radius = max(scene.point_light_pos_radius.w, 0.001);
-    if (dist < radius) {
-        let pt_dir = to_pt / max(dist, 0.0001);
-        let atten = pow(1.0 - clamp(dist / radius, 0.0, 1.0), 2.0);
-        let pt_ndl = max(dot(normal, pt_dir), 0.25); // wrap lighting for 2.5D cards
-        lit += base_rgba.rgb * scene.point_light_color_intensity.rgb * (atten * pt_ndl * scene.point_light_color_intensity.w * 0.45);
+    // 3D Clustered Point Lights (up to 4 simultaneous dynamic point lights: lanterns, shrines, spell orbs)
+    for (var i: u32 = 0u; i < 4u; i = i + 1u) {
+        let pt_pos_r = scene.point_lights_pos_radius[i];
+        let pt_col_i = scene.point_lights_color_intensity[i];
+        let radius = pt_pos_r.w;
+        if (radius > 0.001) {
+            let to_pt = pt_pos_r.xyz - in.world_pos;
+            let dist = length(to_pt);
+            if (dist < radius) {
+                let pt_dir = to_pt / max(dist, 0.0001);
+                let atten = pow(1.0 - clamp(dist / radius, 0.0, 1.0), 2.0);
+                let pt_ndl = max(dot(normal, pt_dir), 0.25); // wrap lighting for 2.5D cards
+                lit += base_rgba.rgb * pt_col_i.rgb * (atten * pt_ndl * pt_col_i.w * 0.45);
+            }
+        }
     }
 
-    lit += emissive;
+    // Subtle HD-2D Rim Lighting + Soft Bloom Highlight Boost
+    let view_dir = normalize(scene.camera_pos.xyz - in.world_pos);
+    let rim = pow(1.0 - max(dot(normal, view_dir), 0.0), 3.0) * 0.14;
+    lit += scene.sun_color.rgb * (rim * shadow_factor) + emissive;
+    let luma = dot(lit, vec3<f32>(0.2126, 0.7152, 0.0722));
+    if (luma > 0.85) {
+        lit += (lit - vec3<f32>(0.85)) * scene.diorama_params.w;
+    }
 
     // Tactical Fog of War 2D Grid sampling
     let fow_uv = (in.world_pos.xz - scene.fow_bounds.xy) / (scene.fow_bounds.zw - scene.fow_bounds.xy);
