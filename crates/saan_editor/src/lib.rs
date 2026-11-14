@@ -15,7 +15,7 @@ use egui::{Color32, Pos2, ProgressBar, Rect, RichText, ScrollArea, Sense, Slider
 use glam::{Quat, Vec2, Vec3, Vec4};
 use saan_core::{
     ActionState, ActionStateStrand, BillboardMode, CameraRig, Collider3D, EntityId,
-    EventWeftStrand, HealthStrand, InputStrand, Loom, Material3D, Mesh3D, MeshPrimitive,
+    EntityBlueprint, EventWeftStrand, HealthStrand, InputStrand, Loom, Material3D, Mesh3D, MeshPrimitive,
     NameStrand, ParticleEmitter3D, PointLight, ScenePattern, ScriptStrand, Sprite25D, Transform,
     Velocity, World,
 };
@@ -192,12 +192,10 @@ impl EditorState {
     /// Duplicates the currently selected entity with a slight world-space offset.
     pub fn duplicate_selected(&mut self, world: &mut World) -> Option<EntityId> {
         let selected = self.selected_entity?;
-        let selected_name = world.get_strand::<NameStrand>(selected)?.0.clone();
-        let extracted = ScenePattern::extract_from_world(world, &self.scene_title, "");
-        let mut bp = extracted.entities.into_iter().find(|e| e.name == selected_name)?.clone();
+        // Copy by id, not by name: names repeat, and a name lookup can pick a different entity.
+        let mut bp = EntityBlueprint::from_entity(world, selected)?;
 
         self.record_undo_snapshot(world);
-        bp.name = format!("{}_copy", bp.name);
         bp.transform.translation += Vec3::new(1.0, 0.0, 1.0);
 
         let single = ScenePattern {
@@ -208,6 +206,10 @@ impl EditorState {
         };
         let spawned = single.weave_into_world(world);
         let new_id = spawned.into_iter().next()?;
+        // Unique name, so undo/redo (which re-selects by name) finds this copy and not a sibling.
+        if let Some(name) = world.get_strand_mut::<NameStrand>(new_id) {
+            name.0 = format!("{}_copy_{new_id}", name.0);
+        }
         self.select(Some(new_id));
         self.status_message = format!("Duplicated entity #{selected} -> #{new_id}");
         Some(new_id)
@@ -362,7 +364,7 @@ impl EditorState {
         match kind {
             "sprite_hero" => {
                 world
-                    .weave_strand(entity, NameStrand("spawned_hero".to_string()))
+                    .weave_strand(entity, NameStrand(format!("spawned_hero_{entity}")))
                     .weave_strand(entity, Transform::from_xyz(pos.x, pos.y, pos.z))
                     .weave_strand(entity, Velocity::default())
                     .weave_strand(
@@ -382,7 +384,7 @@ impl EditorState {
             }
             "spirit_lantern" => {
                 world
-                    .weave_strand(entity, NameStrand("spawned_lantern".to_string()))
+                    .weave_strand(entity, NameStrand(format!("spawned_lantern_{entity}")))
                     .weave_strand(entity, Transform::from_xyz(pos.x, pos.y + 1.2, pos.z))
                     .weave_strand(
                         entity,
@@ -479,7 +481,11 @@ impl EditorState {
             "Edited and authored via Saan Craft Editor",
         );
 
-        pattern.save_to_file(&path)?;
+        // Callers drop the Result, so the status bar is where the user learns a save failed.
+        if let Err(err) = pattern.save_to_file(&path) {
+            self.status_message = format!("Save FAILED for {}: {err}", path.display());
+            return Err(err.into());
+        }
         self.status_message = format!("Successfully saved scene to {}", path.display());
         Ok(path)
     }
@@ -1264,6 +1270,31 @@ mod tests {
 
         assert!(state.redo(&mut world));
         assert_eq!(world.query::<Transform>().count(), count_before + 1);
+    }
+
+    #[test]
+    fn duplicate_copies_the_selected_entity_even_when_names_repeat() {
+        let mut state = EditorState::new("Dup Test", None);
+        let mut world = World::new();
+        let first = state.spawn_prefab("stone_cube", &mut world);
+        state.cursor_world_pos = Vec3::new(5.0, 0.0, 0.0);
+        let second = state.spawn_prefab("stone_cube", &mut world);
+        // Force a name clash, as with hand-named or loaded entities.
+        world.get_strand_mut::<NameStrand>(first).unwrap().0 = "rock".into();
+        world.get_strand_mut::<NameStrand>(second).unwrap().0 = "rock".into();
+
+        state.select(Some(second));
+        let copy = state.duplicate_selected(&mut world).unwrap();
+        let src_x = world.get_strand::<Transform>(second).unwrap().translation.x;
+        assert_eq!(world.get_strand::<Transform>(copy).unwrap().translation.x, src_x + 1.0);
+
+        // Undo/redo re-selects by name, so two copies of one source must get different names.
+        state.select(Some(second));
+        let copy2 = state.duplicate_selected(&mut world).unwrap();
+        let name1 = &world.get_strand::<NameStrand>(copy).unwrap().0;
+        let name2 = &world.get_strand::<NameStrand>(copy2).unwrap().0;
+        assert!(name1.starts_with("rock_copy_"));
+        assert_ne!(name1, name2);
     }
 
     #[test]
