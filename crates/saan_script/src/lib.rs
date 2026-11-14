@@ -97,7 +97,7 @@ impl ScriptHost {
         events: &[GameplayEvent],
     ) -> (Option<Vec3>, Option<Vec3>, Vec<String>) {
         let mut ctx = ScriptCtx::new(pos, vel, dt, target_pos);
-        let scope = self.scopes.entry(entity).or_insert_with(Scope::new);
+        let scope = self.scopes.entry(entity).or_default();
         scope.set_value("ctx", ctx.clone());
 
         // 1. Run top-level statements if any
@@ -302,13 +302,12 @@ impl WeftSystem for ScriptingWeftSystem {
                 vel.linear = new_vel;
             }
         }
-        if !emitted_events.is_empty() {
-            if let Some((_, bus)) = world.query_mut::<EventWeftStrand>().next() {
+        if !emitted_events.is_empty()
+            && let Some((_, bus)) = world.query_mut::<EventWeftStrand>().next() {
                 for ev in emitted_events {
                     bus.publish(ev);
                 }
             }
-        }
     }
 }
 
