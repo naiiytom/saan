@@ -15,12 +15,12 @@
 | Crate | Weaving Role | Description |
 | :--- | :--- | :--- |
 | `saan_core` | **The Loom** | Custom ECS (`World`, `EntityId`, `Strand`), spatial math (`glam`), DAG system scheduler (`Loom`), tension validation, Fog of War, and `.saan` scene patterns |
-| `saan_asset` | **The Thread** | Asset pipeline: Aseprite JSON spritesheet parser (`FlipbookStrand`), Wavefront `.obj` 3D mesh loader (`MeshAssetData`), and RGBA8 procedural texture generators |
-| `saan_spatial` | **The Space** | 2.5D/3D collision (`Collider3D`: `Aabb3D`, `CylinderY`), stair/ledge step-up, raycast camera occlusion fade, dual nav (`GridMap3D` multi-height A* & `FlowField25D`), and `AgentController` squad commanding |
+| `saan_asset` | **The Thread** | Asset pipeline: Aseprite JSON spritesheet parser (`FlipbookStrand`), MagicaVoxel `.vox` greedy mesher, glTF 2.0 & Wavefront `.obj` 3D mesh loaders (`MeshAssetData`), and RGBA8 procedural texture generators |
+| `saan_spatial` | **The Space** | 2.5D/3D collision (`Collider3D`: `Aabb3D`, `CylinderY`), stair/ledge step-up, raycast camera occlusion fade, dual nav (`GridMap3D` multi-height A* & `FlowField25D`), `AgentController` squad commanding, and ARPG hitbox/hurtbox/projectile combat |
 | `saan_script` | **The Mind** | Embedded Rhai scripting engine (`ScriptStrand`, `ScriptHost`, hot-reloadable gameplay logic, unit AI, and scenario triggers) |
 | `saan_audio` | **The Resonance** | Pure-Rust `rodio` audio engine, 3D spatial panning, BGM/SFX buses, procedural waveform synthesis fallback, and headless-safe operation |
-| `saan_render` | **The Mesh** | Hybrid 2.5D + 3D `wgpu` render graph: 2048x2048 directional depth shadow maps with 4-tap PCF, 3D meshes, depth-sorted billboard sprites, dynamic Fog of War grid texture, 3D particles, and tilt-shift DOF |
-| `saan_editor` | **The Craft Loom** | Interactive diorama editor: live entity hierarchy, strand component inspector, 3D grid tile brush, simulation controls, and `.saan` serializer |
+| `saan_render` | **The Mesh** | Hybrid 2.5D + 3D `wgpu` render graph: 2048x2048 directional depth shadow maps with 4-tap PCF, 4-light clustered point lighting, 3D meshes, depth-sorted billboard sprites, floating 3D health bars, dynamic Fog of War grid texture, 3D particles, and tilt-shift DOF + rim/bloom |
+| `saan_editor` | **The Craft Loom** | Interactive `egui` diorama workstation: live entity hierarchy, strand component inspector, 3D viewport ray picking, 3-axis move gizmo, 3D grid tile brush, undo/redo, simulation controls, and `.saan` serializer |
 | `saan_cli` | **The Station** | CLI toolbelt: `saan init`, `saan inspect`, `saan weave`, `saan run`, `saan edit` |
 
 ---
