@@ -7,6 +7,7 @@ use std::collections::HashMap;
 use std::io::Cursor;
 use std::sync::mpsc::{channel, Sender};
 
+use rodio::source::ChannelVolume;
 use rodio::{Decoder, OutputStream, Sink};
 use saan_core::{EventWeftStrand, GameplayEvent, Loom, LoomError, WeftSystem, World};
 
@@ -86,11 +87,10 @@ pub enum AudioCommand {
         sound_id: String,
         stereo_gain: [f32; 2],
     },
-    SetBgmVolume(f32),
     SetSfxVolume(f32),
 }
 
-/// The active Rodio sound device manager holding BGM and spatial SFX buses.
+/// The active Rodio sound device manager holding the spatial SFX bus.
 #[derive(Clone)]
 pub struct AudioEngine {
     tx: Sender<AudioCommand>,
@@ -152,15 +152,13 @@ impl AudioEngine {
                             if let Ok(source) = Decoder::new(Cursor::new(wav_data)) {
                                 sfx_sinks.retain(|s| !s.empty());
                                 if let Ok(sink) = Sink::try_new(handle) {
-                                    let vol = max_gain * sfx_volume;
-                                    sink.set_volume(vol.clamp(0.0, 2.0));
-                                    sink.append(source);
+                                    // Downmix to mono, then apply per-ear gains so left/right placement is audible.
+                                    let [left, right] = stereo_gain.map(|g| g.clamp(0.0, 2.0));
+                                    sink.set_volume(sfx_volume);
+                                    sink.append(ChannelVolume::new(source, vec![left, right]));
                                     sfx_sinks.push(sink);
                                 }
                             }
-                        }
-                        AudioCommand::SetBgmVolume(_vol) => {
-                            // Reserved for BGM stream
                         }
                         AudioCommand::SetSfxVolume(vol) => {
                             sfx_volume = vol.clamp(0.0, 2.0);
