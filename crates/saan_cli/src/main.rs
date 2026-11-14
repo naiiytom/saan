@@ -83,7 +83,7 @@ enum Commands {
 
 fn resolve_scene_path(path: PathBuf) -> PathBuf {
     if path.extension().and_then(|e| e.to_str()) == Some("saan") {
-        if !path.exists() && path == PathBuf::from("scene.saan") {
+        if !path.exists() && path.as_path() == std::path::Path::new("scene.saan") {
             if PathBuf::from("assets/scenes/arpg_shrine_clash.saan").exists() {
                 return PathBuf::from("assets/scenes/arpg_shrine_clash.saan");
             }

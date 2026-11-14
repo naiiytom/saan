@@ -736,12 +736,11 @@ impl ApplicationHandler for SaanEditorApp {
                     }
                 }
 
-                if let Some(max) = self.options.max_frames {
-                    if self.frame_counter >= max {
+                if let Some(max) = self.options.max_frames
+                    && self.frame_counter >= max {
                         event_loop.exit();
                         return;
                     }
-                }
 
                 if let Some(ref win) = self.window {
                     win.request_redraw();

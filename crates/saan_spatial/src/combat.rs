@@ -198,8 +198,8 @@ impl WeftSystem for ActionStateWeftSystem {
 
             if let Some(action) = world.get_strand_mut::<ActionStateStrand>(entity) {
                 // Buffer inputs if interactive input is active and entity is player (team == 0)
-                if team == 0 {
-                    if let Some(inp) = input {
+                if team == 0
+                    && let Some(inp) = input {
                         if inp.dash {
                             let move_world = cam_right * inp.move_axis.x + cam_forward * inp.move_axis.z;
                             let move_dir = Vec2::new(move_world.x, move_world.z);
@@ -217,7 +217,6 @@ impl WeftSystem for ActionStateWeftSystem {
                             action.buffered_spell = true;
                         }
                     }
-                }
 
                 if action.buffered_spell {
                     action.buffered_spell = false;
@@ -243,8 +242,8 @@ impl WeftSystem for ActionStateWeftSystem {
                                 max_time: 0.28,
                                 has_spawned_hitbox: false,
                             };
-                        } else if team == 0 {
-                            if let Some(inp) = input {
+                        } else if team == 0
+                            && let Some(inp) = input {
                                 let move_world = cam_right * inp.move_axis.x + cam_forward * inp.move_axis.z;
                                 let move_dir = Vec2::new(move_world.x, move_world.z);
                                 if move_dir.length_squared() > 1e-4 {
@@ -255,7 +254,6 @@ impl WeftSystem for ActionStateWeftSystem {
                                     flipbook_start_end = Some((0, 3));
                                 }
                             }
-                        }
                     }
                     ActionState::Move { speed } => {
                         flipbook_start_end = Some((0, 3)); // 4-frame walk cycle
@@ -275,8 +273,8 @@ impl WeftSystem for ActionStateWeftSystem {
                                 max_time: 0.28,
                                 has_spawned_hitbox: false,
                             };
-                        } else if team == 0 {
-                            if let Some(inp) = input {
+                        } else if team == 0
+                            && let Some(inp) = input {
                                 let move_world = cam_right * inp.move_axis.x + cam_forward * inp.move_axis.z;
                                 let move_dir = Vec2::new(move_world.x, move_world.z);
                                 if move_dir.length_squared() > 1e-4 {
@@ -288,7 +286,6 @@ impl WeftSystem for ActionStateWeftSystem {
                                     new_vel = Some(Vec3::ZERO);
                                 }
                             }
-                        }
                     }
                     ActionState::Dash { ref mut timer, direction, speed, .. } => {
                         flipbook_start_end = Some((1, 1));
@@ -345,22 +342,19 @@ impl WeftSystem for ActionStateWeftSystem {
                 }
             }
 
-            if let Some(vel_vec) = new_vel {
-                if let Some(vel) = world.get_strand_mut::<Velocity>(entity) {
+            if let Some(vel_vec) = new_vel
+                && let Some(vel) = world.get_strand_mut::<Velocity>(entity) {
                     vel.linear.x = vel_vec.x;
                     vel.linear.z = vel_vec.z;
                 }
-            }
 
-            if let Some((start, end)) = flipbook_start_end {
-                if let Some(flipbook) = world.get_strand_mut::<FlipbookStrand>(entity) {
-                    if flipbook.start_frame != start || flipbook.end_frame != end {
+            if let Some((start, end)) = flipbook_start_end
+                && let Some(flipbook) = world.get_strand_mut::<FlipbookStrand>(entity)
+                    && (flipbook.start_frame != start || flipbook.end_frame != end) {
                         flipbook.start_frame = start;
                         flipbook.end_frame = end;
                         flipbook.current_frame = start;
                     }
-                }
-            }
         }
 
         // 2. Spawn hitboxes and spell projectiles triggered by action states

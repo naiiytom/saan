@@ -311,32 +311,29 @@ impl ApplicationHandler for SaanApp {
                         if code == KeyCode::Space {
                             self.paused = !self.paused;
                         }
-                        if code == KeyCode::Tab || code == KeyCode::F1 {
-                            if let Some(insp) = self
+                        if (code == KeyCode::Tab || code == KeyCode::F1)
+                            && let Some(insp) = self
                                 .world
                                 .get_strand_mut::<InspectorStrand>(self.inspector_entity)
                             {
                                 insp.visible = !insp.visible;
                             }
-                        }
-                        if code == KeyCode::Digit1 {
-                            if let Some(insp) = self
+                        if code == KeyCode::Digit1
+                            && let Some(insp) = self
                                 .world
                                 .get_strand_mut::<InspectorStrand>(self.inspector_entity)
                             {
                                 insp.selected_entity_idx =
                                     insp.selected_entity_idx.wrapping_sub(1);
                             }
-                        }
-                        if code == KeyCode::Digit2 {
-                            if let Some(insp) = self
+                        if code == KeyCode::Digit2
+                            && let Some(insp) = self
                                 .world
                                 .get_strand_mut::<InspectorStrand>(self.inspector_entity)
                             {
                                 insp.selected_entity_idx =
                                     insp.selected_entity_idx.wrapping_add(1);
                             }
-                        }
                         self.pressed_keys.insert(code);
                     }
                     ElementState::Released => {
@@ -352,13 +349,11 @@ impl ApplicationHandler for SaanApp {
 
                 self.sync_input_strand();
                 self.update_inspector(dt);
-                if self.frame_counter % 30 == 0 {
-                    if let Some(reloader) = &mut self.hot_reloader {
-                        if let Ok(Some(new_title)) = reloader.poll_reload(&mut self.world) {
+                if self.frame_counter.is_multiple_of(30)
+                    && let Some(reloader) = &mut self.hot_reloader
+                        && let Ok(Some(new_title)) = reloader.poll_reload(&mut self.world) {
                             println!("Hot-reloaded .saan scene pattern: '{new_title}'");
                         }
-                    }
-                }
                 let sim_dt = if self.paused { 0.0 } else { dt };
                 let _ = self.loom.step(&mut self.world, sim_dt);
 
@@ -379,8 +374,8 @@ impl ApplicationHandler for SaanApp {
                 }
 
                 self.frame_counter += 1;
-                if let Some(max) = self.options.max_frames {
-                    if self.frame_counter >= max {
+                if let Some(max) = self.options.max_frames
+                    && self.frame_counter >= max {
                         println!(
                             "Completed {} rendered frames in wgpu viewport; exiting.",
                             self.frame_counter
@@ -388,7 +383,6 @@ impl ApplicationHandler for SaanApp {
                         event_loop.exit();
                         return;
                     }
-                }
 
                 if let Some(win) = &self.window {
                     win.request_redraw();
