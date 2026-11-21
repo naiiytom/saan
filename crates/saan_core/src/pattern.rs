@@ -1054,7 +1054,10 @@ impl ScenePattern {
         }
         let json = serde_json::to_string_pretty(self)
             .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
-        fs::write(path, json)
+        // Write a sibling temp file and rename it over the target, so a crash mid-write can't truncate the scene.
+        let tmp = path.with_extension("saan.tmp");
+        fs::write(&tmp, json)?;
+        fs::rename(&tmp, path)
     }
 
     /// Loads a `.saan` scene pattern from `path`.
@@ -1068,54 +1071,20 @@ impl ScenePattern {
     pub fn extract_from_world(world: &World, title: impl Into<String>, description: impl Into<String>) -> Self {
         let mut entities = Vec::new();
 
-        for (entity, transform) in world.query::<Transform>() {
-            let name = world
-                .get_strand::<NameStrand>(entity)
-                .map(|n| n.0.clone())
-                .unwrap_or_else(|| format!("entity_{entity}"));
-
-            // Skip internal engine singleton entities like the event bus
-            if name.starts_with("event_weft") || name.starts_with("__engine") {
+        for (entity, _) in world.query::<Transform>() {
+            // Hitboxes live for a fraction of a second and hold raw owner ids that won't match after reload.
+            if world.has_strand::<HitboxStrand>(entity) {
                 continue;
             }
+            let Some(blueprint) = EntityBlueprint::from_entity(world, entity) else {
+                continue;
+            };
 
-            let velocity = world.get_strand::<Velocity>(entity).copied();
-            let collider_3d = world.get_strand::<Collider3D>(entity).copied();
-            let sprite_25d = world.get_strand::<Sprite25D>(entity).cloned();
-            let flipbook = world.get_strand::<FlipbookStrand>(entity).cloned();
-            let mesh_3d = world.get_strand::<Mesh3D>(entity).cloned();
-            let camera = world.get_strand::<CameraRig>(entity).copied();
-            let directional_light = world.get_strand::<DirectionalLight>(entity).copied();
-            let point_light = world.get_strand::<PointLight>(entity).copied();
-            let audio_emitter = world.get_strand::<AudioEmitter3D>(entity).cloned();
-            let script = world.get_strand::<ScriptStrand>(entity).cloned();
-            let fog_of_war = world.get_strand::<FogOfWarStrand>(entity).cloned();
-            let particle_emitter = world.get_strand::<ParticleEmitter3D>(entity).cloned();
-            let health = world.get_strand::<HealthStrand>(entity).cloned();
-            let action_state = world.get_strand::<ActionStateStrand>(entity).cloned();
-            let hurtbox = world.get_strand::<HurtboxStrand>(entity).cloned();
-            let hitbox = world.get_strand::<HitboxStrand>(entity).cloned();
-
-            entities.push(EntityBlueprint {
-                name,
-                transform: *transform,
-                velocity,
-                collider_3d,
-                sprite_25d,
-                flipbook,
-                mesh_3d,
-                camera,
-                directional_light,
-                point_light,
-                audio_emitter,
-                script,
-                fog_of_war,
-                particle_emitter,
-                health,
-                action_state,
-                hurtbox,
-                hitbox,
-            });
+            // Skip internal engine singleton entities like the event bus
+            if blueprint.name.starts_with("event_weft") || blueprint.name.starts_with("__engine") {
+                continue;
+            }
+            entities.push(blueprint);
         }
 
         Self {
@@ -1125,7 +1094,57 @@ impl ScenePattern {
             entities,
         }
     }
+}
 
+impl EntityBlueprint {
+    /// Captures every serializable strand of `entity`; `None` if it has no [`Transform`].
+    pub fn from_entity(world: &World, entity: EntityId) -> Option<Self> {
+        let transform = world.get_strand::<Transform>(entity)?;
+        let name = world
+            .get_strand::<NameStrand>(entity)
+            .map(|n| n.0.clone())
+            .unwrap_or_else(|| format!("entity_{entity}"));
+        let velocity = world.get_strand::<Velocity>(entity).copied();
+        let collider_3d = world.get_strand::<Collider3D>(entity).copied();
+        let sprite_25d = world.get_strand::<Sprite25D>(entity).cloned();
+        let flipbook = world.get_strand::<FlipbookStrand>(entity).cloned();
+        let mesh_3d = world.get_strand::<Mesh3D>(entity).cloned();
+        let camera = world.get_strand::<CameraRig>(entity).copied();
+        let directional_light = world.get_strand::<DirectionalLight>(entity).copied();
+        let point_light = world.get_strand::<PointLight>(entity).copied();
+        let audio_emitter = world.get_strand::<AudioEmitter3D>(entity).cloned();
+        let script = world.get_strand::<ScriptStrand>(entity).cloned();
+        let fog_of_war = world.get_strand::<FogOfWarStrand>(entity).cloned();
+        let particle_emitter = world.get_strand::<ParticleEmitter3D>(entity).cloned();
+        let health = world.get_strand::<HealthStrand>(entity).cloned();
+        let action_state = world.get_strand::<ActionStateStrand>(entity).cloned();
+        let hurtbox = world.get_strand::<HurtboxStrand>(entity).cloned();
+        let hitbox = world.get_strand::<HitboxStrand>(entity).cloned();
+
+        Some(EntityBlueprint {
+            name,
+            transform: *transform,
+            velocity,
+            collider_3d,
+            sprite_25d,
+            flipbook,
+            mesh_3d,
+            camera,
+            directional_light,
+            point_light,
+            audio_emitter,
+            script,
+            fog_of_war,
+            particle_emitter,
+            health,
+            action_state,
+            hurtbox,
+            hitbox,
+        })
+    }
+}
+
+impl ScenePattern {
     /// Hydrates this [`ScenePattern`] into a live [`World`], returning the spawned [`EntityId`]s.
     pub fn weave_into_world(&self, world: &mut World) -> Vec<EntityId> {
         let mut spawned = Vec::with_capacity(self.entities.len());
@@ -1250,6 +1269,28 @@ impl SceneHotReloader {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn saved_scene_skips_transient_hitboxes_and_leaves_no_temp_file() {
+        let mut world = World::new();
+        let hero = world.spawn();
+        world.weave_strand(hero, NameStrand("hero".into())).weave_strand(hero, Transform::default());
+        let orb = world.spawn();
+        world.weave_strand(orb, Transform::default()).weave_strand(
+            orb,
+            HitboxStrand::new(hero, 0, 10.0, Vec3::ZERO, crate::strands::CombatShape::Sphere { radius: 0.3 }, 1.0),
+        );
+
+        let pattern = ScenePattern::extract_from_world(&world, "t", "");
+        assert_eq!(pattern.entities.len(), 1);
+        assert_eq!(pattern.entities[0].name, "hero");
+
+        let path = std::env::temp_dir().join(format!("saan_save_{}.saan", std::process::id()));
+        pattern.save_to_file(&path).unwrap();
+        assert_eq!(ScenePattern::load_from_file(&path).unwrap().entities.len(), 1);
+        assert!(!path.with_extension("saan.tmp").exists());
+        let _ = fs::remove_file(&path);
+    }
 
     #[test]
     fn default_hd2d_scene_hydrates_into_world() {
