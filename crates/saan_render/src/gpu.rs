@@ -69,7 +69,11 @@ impl GpuSceneUniforms {
 
         let mut point_lights_pos_radius = [[0.0f32; 4]; 4];
         let mut point_lights_color_intensity = [[0.0f32; 4]; 4];
-        for (i, (pos, l)) in frame.lighting.point_lights.iter().take(4).enumerate() {
+        // The shader holds 4 lights: keep the ones nearest the camera focus, not the lowest entity ids.
+        let focus = frame.camera.target;
+        let mut nearest: Vec<_> = frame.lighting.point_lights.iter().collect();
+        nearest.sort_by(|a, b| a.0.distance_squared(focus).total_cmp(&b.0.distance_squared(focus)));
+        for (i, (pos, l)) in nearest.into_iter().take(4).enumerate() {
             point_lights_pos_radius[i] = [pos.x, pos.y, pos.z, l.radius];
             point_lights_color_intensity[i] = [l.color.x, l.color.y, l.color.z, l.intensity];
         }
@@ -1055,10 +1059,10 @@ impl GpuRenderer {
             .write_buffer(&self.uniform_buffer, 0, bytemuck::bytes_of(&uniforms));
 
         // 1. Write dynamic Fog of War visibility cells to 2D texture
-        let fow_bytes = if let Some(ref fow) = frame.fog_of_war {
-            fow.cells.clone()
-        } else {
-            vec![255u8; 64 * 64]
+        // The FoW texture is fixed at 64x64; any other grid size would fail write_texture validation and panic.
+        let fow_bytes = match frame.fog_of_war {
+            Some(ref fow) if fow.cells.len() == 64 * 64 => fow.cells.clone(),
+            _ => vec![255u8; 64 * 64],
         };
         self.queue.write_texture(
             wgpu::ImageCopyTexture {
@@ -1184,6 +1188,23 @@ mod tests {
     use super::*;
     use crate::RenderLoom;
     use saan_core::{ScenePattern, World};
+
+    #[test]
+    fn uniforms_keep_the_four_point_lights_nearest_the_camera_focus() {
+        let mut world = World::new();
+        ScenePattern::default_hd2d_diorama("Lights Test").weave_into_world(&mut world);
+        let mut frame = RenderLoom::hd2d_pipeline().extract_frame(&world);
+        let focus = frame.camera.target;
+        let light = saan_core::PointLight { color: Vec3::ONE, intensity: 1.0, radius: 4.0 };
+        // Four far lights first (as low entity ids would be), then one right at the focus.
+        frame.lighting.point_lights = (0..4)
+            .map(|i| (focus + Vec3::new(50.0 + i as f32, 0.0, 0.0), light))
+            .chain(std::iter::once((focus, light)))
+            .collect();
+
+        let uniforms = GpuSceneUniforms::from_frame(&frame, 0.0);
+        assert_eq!(uniforms.point_lights_pos_radius[0][..3], focus.to_array());
+    }
 
     #[test]
     fn tessellates_3d_meshes_and_25d_sprites_with_shadows() {

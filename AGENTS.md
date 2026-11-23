@@ -26,7 +26,7 @@ saan_core     (The Loom)       — Custom ECS (Warp/Entities, Strands/Components
 saan_asset    (The Thread)     — Asset loaders (Aseprite JSON, Wavefront OBJ, RGBA8 sprite generation)
 saan_spatial  (The Space)      — 3D collision (AABB/Cylinder), stair step-up, raycast occlusion fade, dual nav (GridMap3D & FlowField25D), agent commanding
 saan_script   (The Mind)       — Embedded Rhai scripting engine (ScriptStrand, ScriptHost, hot-reloadable gameplay logic)
-saan_audio    (The Resonance)  — Rodio-backed 3D spatial audio & BGM engine, procedural waveform synthesis fallback, headless-safe
+saan_audio    (The Resonance)  — Rodio-backed 3D spatial (stereo-panned) SFX engine, procedural waveform synthesis fallback, headless-safe
 saan_render   (The Mesh)       — Hybrid HD-2D billboard sprites + 3D meshes, directional hardware depth shadows, Fog of War, tilt-shift DOF post-processing
 saan_editor   (The Craft Loom) — Integrated diorama editor (entity hierarchy, strand inspector, 3D grid tile brush, .saan save)
 saan_cli      (The Station)    — CLI toolbelt (`saan init`, `saan inspect`, `saan weave`, `saan run`, `saan edit`)
