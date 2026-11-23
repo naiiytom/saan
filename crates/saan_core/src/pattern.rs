@@ -1047,11 +1047,10 @@ impl ScenePattern {
 
     /// Saves the scene pattern as formatted JSON to `path`.
     pub fn save_to_file(&self, path: &Path) -> std::io::Result<()> {
-        if let Some(parent) = path.parent() {
-            if !parent.as_os_str().is_empty() {
+        if let Some(parent) = path.parent()
+            && !parent.as_os_str().is_empty() {
                 fs::create_dir_all(parent)?;
             }
-        }
         let json = serde_json::to_string_pretty(self)
             .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
         // Write a sibling temp file and rename it over the target, so a crash mid-write can't truncate the scene.

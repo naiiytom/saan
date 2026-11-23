@@ -186,17 +186,11 @@ impl AudioEngine {
 }
 
 /// Weft system that listens for [`GameplayEvent::AudioCue`] events and plays spatial audio.
+#[derive(Default)]
 pub struct AudioPlaybackWeftSystem {
     engine: AudioEngine,
 }
 
-impl Default for AudioPlaybackWeftSystem {
-    fn default() -> Self {
-        Self {
-            engine: AudioEngine::new(),
-        }
-    }
-}
 
 impl AudioPlaybackWeftSystem {
     pub fn new() -> Self {

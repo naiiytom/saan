@@ -611,11 +611,10 @@ pub fn get_or_load_vox_mesh(path: impl AsRef<Path>, scale: f32) -> MeshAssetData
     let path_ref = path.as_ref();
     let cache_key = format!("{}::scale_{}", path_ref.display(), scale);
 
-    if let Ok(guard) = VOX_MESH_CACHE.read() {
-        if let Some(cached) = guard.get(&cache_key) {
+    if let Ok(guard) = VOX_MESH_CACHE.read()
+        && let Some(cached) = guard.get(&cache_key) {
             return cached.clone();
         }
-    }
 
     // Missing (or empty) path or unreadable file falls back to the procedural shrine.
     let model = if path_ref.exists() {

@@ -7,7 +7,9 @@ use serde::{Deserialize, Serialize};
 
 /// Type of surface terrain at a grid cell.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Default)]
 pub enum TileType {
+    #[default]
     Grass,
     Stone,
     Dirt,
@@ -17,11 +19,6 @@ pub enum TileType {
     Blocked,
 }
 
-impl Default for TileType {
-    fn default() -> Self {
-        Self::Grass
-    }
-}
 
 /// Data for an individual cell in a 3D multi-height tilemap.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
