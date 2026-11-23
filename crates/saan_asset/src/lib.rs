@@ -391,8 +391,8 @@ impl MeshAssetData {
             let buf = raw_buffers
                 .get(view.buffer)
                 .ok_or_else(|| AssetError::InvalidMesh("Invalid buffer index".into()))?;
-            let start = view.byte_offset + acc.byte_offset;
-            let end = (view.byte_offset + view.byte_length).min(buf.len());
+            let start = view.byte_offset.saturating_add(acc.byte_offset);
+            let end = view.byte_offset.saturating_add(view.byte_length).min(buf.len());
             if start > end {
                 return Err(AssetError::InvalidMesh("Accessor offset out of bounds".into()));
             }
@@ -406,7 +406,7 @@ impl MeshAssetData {
                 .get(acc_idx)
                 .ok_or_else(|| AssetError::InvalidMesh("Missing VEC3 accessor".into()))?;
             let (bytes, stride) = slice_for(acc, 12)?;
-            let mut out = Vec::with_capacity(acc.count);
+            let mut out = Vec::new(); // not with_capacity(acc.count): count comes from the file and may be huge
             for i in 0..acc.count {
                 let off = i * stride;
                 if off + 12 > bytes.len() {
@@ -426,7 +426,7 @@ impl MeshAssetData {
                 .get(acc_idx)
                 .ok_or_else(|| AssetError::InvalidMesh("Missing VEC2 accessor".into()))?;
             let (bytes, stride) = slice_for(acc, 8)?;
-            let mut out = Vec::with_capacity(acc.count);
+            let mut out = Vec::new(); // not with_capacity(acc.count): count comes from the file and may be huge
             for i in 0..acc.count {
                 let off = i * stride;
                 if off + 8 > bytes.len() {
@@ -470,7 +470,7 @@ impl MeshAssetData {
                         _ => return Err(AssetError::InvalidMesh("Unsupported glTF index componentType".into())),
                     };
                     let (bytes, stride) = slice_for(acc, elem_size)?;
-                    let mut out = Vec::with_capacity(acc.count);
+                    let mut out = Vec::new(); // not with_capacity(acc.count): count comes from the file and may be huge
                     for i in 0..acc.count {
                         let off = i * stride;
                         if off + elem_size > bytes.len() {
@@ -735,5 +735,23 @@ mod tests {
         assert_eq!(mesh.vertices[1].position, Vec3::new(1.0, 0.0, 0.0));
         assert_eq!(mesh.vertices[2].position, Vec3::new(0.0, 1.0, 0.0));
         assert_eq!(mesh.vertices[0].normal, Vec3::Z);
+
+        // A lying accessor count must not pre-allocate (capacity overflow / OOM); reads stop at the buffer end.
+        let huge = gltf.replace(r#""count": 3, "type": "VEC3""#, r#""count": 1000000000000000000, "type": "VEC3""#);
+        assert_ne!(huge, gltf);
+        assert_eq!(MeshAssetData::from_gltf_str("gltf_huge", &huge).unwrap().vertices.len(), 3);
+    }
+
+    #[test]
+    fn vox_with_huge_size_header_is_capped() {
+        let mut model = VoxModel::new("big", 2, 2, 2);
+        model.voxels.push(VoxelPoint { x: 0, y: 0, z: 0, color_index: 1 });
+        let mut bytes = model.encode_vox_bytes();
+        let size_at = bytes.windows(4).position(|w| w == b"SIZE").unwrap() + 12;
+        bytes[size_at..size_at + 12].fill(0xFF); // 4_294_967_295 per axis
+
+        let parsed = VoxModel::from_bytes("big", &bytes).unwrap();
+        assert_eq!((parsed.size_x, parsed.size_y, parsed.size_z), (256, 256, 256));
+        assert!(!parsed.to_greedy_mesh(1.0, Vec3::ZERO).vertices.is_empty());
     }
 }

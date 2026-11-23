@@ -33,3 +33,14 @@ Saan is developed in six structured phases, growing from the core **Loom ECS & 2
 
 ## Phase 6: The Woven Inspector (Visual Editor) (Complete)
 - [x] In-engine Woven Inspector HUD overlay (`InspectorStrand` + `append_woven_inspector_hud` in `saan_render::gpu`) to inspect the live Loom DAG nodes, tweak diorama tilt-shift DOF focus/blur and directional lighting parameters, and cycle entity strands in real time.
+
+## Phase 7: Voxel Meshing, glTF 2.0 & Clustered Lighting (Complete)
+- [x] MagicaVoxel `.vox` chunk parser, 3D greedy mesher, and vertex palette colors (`saan_asset::vox`).
+- [x] Embedded glTF 2.0 JSON + base64 buffer mesh shaver (`MeshAssetData::from_gltf_str`) and unified mesh cache (`get_or_load_mesh_asset`).
+- [x] Clustered 4-point dynamic lighting, Fresnel rim lighting, and soft bloom highlight boost in `HD2D_INTERLACE_WGSL`.
+
+## Phase 8: ARPG Combat & Craft Workstation (Complete)
+- [x] Real-time ARPG `ActionStateStrand`, `HitboxStrand` / `HurtboxStrand`, `CombatWeftSystem`, camera-relative movement, ranged spell projectiles (`spawn_spell_projectile`), soul-siphon heal on kill, and floating 3D health bars.
+- [x] Flagship `arpg_shrine_clash.saan` diorama scene and Rhai enemy chase AI (`enemy_chase_ai.rhai`).
+- [x] Docked `egui` workstation in `saan_editor` with 3D viewport ray picking, 3-axis move gizmo, live 3D tile brush footprint, camera orbit/pan/zoom, entity duplication, and 32-deep snapshot undo/redo.
+

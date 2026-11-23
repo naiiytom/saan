@@ -410,6 +410,10 @@ impl WeftSystem for CombatWeftSystem {
         let hurtboxes: Vec<(EntityId, HurtboxStrand, Vec3, String)> = world
             .query::<HurtboxStrand>()
             .filter_map(|(e, h)| {
+                // Corpses can't be hit again, or the Hurt state would revive them.
+                if world.get_strand::<HealthStrand>(e).is_some_and(|hp| !hp.is_alive) {
+                    return None;
+                }
                 let trans = world.get_strand::<Transform>(e)?;
                 let name = world.get_strand::<NameStrand>(e).map(|n| n.0.clone()).unwrap_or_else(|| format!("entity_{e}"));
                 Some((e, h.clone(), trans.translation + h.offset, name))
@@ -417,18 +421,24 @@ impl WeftSystem for CombatWeftSystem {
             .collect();
 
         let mut hits_to_apply: Vec<(EntityId, EntityId, EntityId, f32, Vec3, f32, Vec3, String, String)> = Vec::new();
+        // The hurtbox snapshot predates this frame's i-frames, so track same-frame hits here.
+        let mut hit_this_frame: Vec<EntityId> = Vec::new();
 
         for (hitbox_entity, mut hitbox, hit_pos) in hitboxes {
             for (target_entity, hurtbox, hurt_pos, target_name) in &hurtboxes {
                 if *target_entity == hitbox.owner || hurtbox.team == hitbox.team {
                     continue;
                 }
-                if hurtbox.invulnerability_timer > 0.0 || hitbox.already_hit.contains(target_entity) {
+                if hurtbox.invulnerability_timer > 0.0
+                    || hitbox.already_hit.contains(target_entity)
+                    || hit_this_frame.contains(target_entity)
+                {
                     continue;
                 }
 
                 if combat_shapes_overlap(&hitbox.shape, hit_pos, &hurtbox.shape, *hurt_pos) {
                     hitbox.already_hit.push(*target_entity);
+                    hit_this_frame.push(*target_entity);
                     let attacker_name = world
                         .get_strand::<NameStrand>(hitbox.owner)
                         .map(|n| n.0.clone())
@@ -717,5 +727,42 @@ mod tests {
         assert!(!world.get_strand::<HealthStrand>(enemy).unwrap().is_alive);
         assert_eq!(world.get_strand::<HealthStrand>(hero).unwrap().current, 85.0);
         assert!(world.get_strand::<HitboxStrand>(orb).is_none());
+    }
+
+    fn duel_world(enemy_hp: f32) -> (World, EntityId, EntityId) {
+        let mut world = World::new();
+        let hero = world.spawn();
+        world.weave_strand(hero, Transform::from_xyz(0.0, 0.0, 0.0));
+        let enemy = world.spawn();
+        world
+            .weave_strand(enemy, Transform::from_xyz(0.0, 0.0, 1.0))
+            .weave_strand(enemy, Velocity::default())
+            .weave_strand(enemy, HealthStrand::new(enemy_hp))
+            .weave_strand(enemy, ActionStateStrand::default())
+            .weave_strand(enemy, HurtboxStrand::cylinder(0.5, 1.8, 1));
+        (world, hero, enemy)
+    }
+
+    #[test]
+    fn dead_target_is_not_revived_by_another_hit() {
+        let (mut world, hero, enemy) = duel_world(10.0);
+        spawn_melee_hitbox(&mut world, hero, 0, Vec3::ZERO, Vec2::new(0.0, 1.0), 1);
+        CombatWeftSystem.weave(&mut world, 0.016);
+        assert!(matches!(world.get_strand::<ActionStateStrand>(enemy).unwrap().state, ActionState::Dead));
+
+        // Wait out the i-frames, then swing at the corpse again.
+        CombatWeftSystem.weave(&mut world, 0.5);
+        spawn_melee_hitbox(&mut world, hero, 0, Vec3::ZERO, Vec2::new(0.0, 1.0), 1);
+        CombatWeftSystem.weave(&mut world, 0.016);
+        assert!(matches!(world.get_strand::<ActionStateStrand>(enemy).unwrap().state, ActionState::Dead));
+    }
+
+    #[test]
+    fn two_hitboxes_in_one_frame_respect_iframes() {
+        let (mut world, hero, enemy) = duel_world(100.0);
+        spawn_melee_hitbox(&mut world, hero, 0, Vec3::ZERO, Vec2::new(0.0, 1.0), 1);
+        spawn_melee_hitbox(&mut world, hero, 0, Vec3::ZERO, Vec2::new(0.0, 1.0), 1);
+        CombatWeftSystem.weave(&mut world, 0.016);
+        assert_eq!(world.get_strand::<HealthStrand>(enemy).unwrap().current, 70.0);
     }
 }

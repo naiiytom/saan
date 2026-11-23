@@ -153,9 +153,10 @@ impl VoxModel {
 
             match chunk_id {
                 b"SIZE" if chunk_content.len() >= 12 => {
-                    size_x = u32::from_le_bytes(chunk_content[0..4].try_into().unwrap()).max(1);
-                    size_y = u32::from_le_bytes(chunk_content[4..8].try_into().unwrap()).max(1);
-                    size_z = u32::from_le_bytes(chunk_content[8..12].try_into().unwrap()).max(1);
+                    // Voxel coords are u8, so sizes above 256 are unusable; capping also stops a bad header from allocating a huge grid.
+                    size_x = u32::from_le_bytes(chunk_content[0..4].try_into().unwrap()).clamp(1, 256);
+                    size_y = u32::from_le_bytes(chunk_content[4..8].try_into().unwrap()).clamp(1, 256);
+                    size_z = u32::from_le_bytes(chunk_content[8..12].try_into().unwrap()).clamp(1, 256);
                 }
                 b"XYZI" if chunk_content.len() >= 4 => {
                     let num_voxels = u32::from_le_bytes(chunk_content[0..4].try_into().unwrap()) as usize;
@@ -616,18 +617,11 @@ pub fn get_or_load_vox_mesh(path: impl AsRef<Path>, scale: f32) -> MeshAssetData
         }
     }
 
-    let model = if path_ref.as_os_str().is_empty()
-        || path_ref.to_string_lossy().contains("shrine")
-        || !path_ref.exists()
-    {
-        // Try reading if file exists, else procedural shrine fallback
-        if path_ref.exists() {
-            VoxModel::load_from_file(path_ref).unwrap_or_else(|_| VoxModel::procedural_ancient_shrine())
-        } else {
-            VoxModel::procedural_ancient_shrine()
-        }
-    } else {
+    // Missing (or empty) path or unreadable file falls back to the procedural shrine.
+    let model = if path_ref.exists() {
         VoxModel::load_from_file(path_ref).unwrap_or_else(|_| VoxModel::procedural_ancient_shrine())
+    } else {
+        VoxModel::procedural_ancient_shrine()
     };
 
     let mesh = model.to_greedy_mesh(scale, Vec3::new(0.5, 0.0, 0.5));

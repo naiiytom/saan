@@ -28,16 +28,26 @@ pub enum ScriptError {
 }
 
 /// Thread-safe registry for Rhai script ASTs with disk hot-reloading support.
-#[derive(Default)]
 pub struct ScriptHost {
     pub engine: Engine,
-    asts: HashMap<String, (AST, Option<SystemTime>)>,
+    asts: HashMap<String, (Arc<AST>, Option<SystemTime>)>,
     scopes: HashMap<EntityId, Scope<'static>>,
+}
+
+/// Rhai operation budget per script call: plenty for a gameplay tick, small enough to stop an endless loop fast.
+const MAX_SCRIPT_OPERATIONS: u64 = 1_000_000;
+
+impl Default for ScriptHost {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl ScriptHost {
     pub fn new() -> Self {
         let mut engine = Engine::new();
+        // A runaway loop (`while true {}`) errors out instead of freezing the frame loop.
+        engine.set_max_operations(MAX_SCRIPT_OPERATIONS);
         register_saan_api(&mut engine);
         Self {
             engine,
@@ -47,15 +57,15 @@ impl ScriptHost {
     }
 
     /// Loads or retrieves a compiled Rhai AST from disk or inline source.
-    pub fn get_or_compile(&mut self, path_or_key: &str, inline_source: Option<&str>) -> Result<&AST, ScriptError> {
+    pub fn get_or_compile(&mut self, path_or_key: &str, inline_source: Option<&str>) -> Result<Arc<AST>, ScriptError> {
         let path = Path::new(path_or_key);
 
         if let Some(source) = inline_source {
             if !self.asts.contains_key(path_or_key) {
                 let ast = self.engine.compile(source)?;
-                self.asts.insert(path_or_key.to_string(), (ast, None));
+                self.asts.insert(path_or_key.to_string(), (Arc::new(ast), None));
             }
-            return Ok(&self.asts.get(path_or_key).unwrap().0);
+            return Ok(self.asts[path_or_key].0.clone());
         }
 
         if path.exists() {
@@ -69,20 +79,33 @@ impl ScriptHost {
             };
 
             if needs_reload {
-                let code = fs::read_to_string(path)?;
-                let ast = self.engine.compile(&code)?;
-                self.asts.insert(path_or_key.to_string(), (ast, modified));
+                let compiled = fs::read_to_string(path)
+                    .map_err(ScriptError::from)
+                    .and_then(|code| Ok(self.engine.compile(&code)?));
+                match compiled {
+                    Ok(ast) => {
+                        self.asts.insert(path_or_key.to_string(), (Arc::new(ast), modified));
+                    }
+                    Err(err) => {
+                        // Remember this mtime so a broken edit reports once and the last good script keeps running.
+                        self.asts
+                            .entry(path_or_key.to_string())
+                            .or_insert_with(|| (Arc::new(AST::empty()), None))
+                            .1 = modified;
+                        return Err(err);
+                    }
+                }
             }
 
-            return Ok(&self.asts.get(path_or_key).unwrap().0);
+            return Ok(self.asts[path_or_key].0.clone());
         }
 
         if !self.asts.contains_key(path_or_key) {
             let empty_ast = self.engine.compile("// empty default script\nfn on_tick(ctx) { return ctx; }")?;
-            self.asts.insert(path_or_key.to_string(), (empty_ast, None));
+            self.asts.insert(path_or_key.to_string(), (Arc::new(empty_ast), None));
         }
 
-        Ok(&self.asts.get(path_or_key).unwrap().0)
+        Ok(self.asts[path_or_key].0.clone())
     }
 
     /// Runs `on_tick(ctx)` or top-level statements on the entity's scope.
@@ -267,7 +290,7 @@ impl WeftSystem for ScriptingWeftSystem {
 
         for (entity, path, inline, pos, vel) in scripts {
             let ast = match host.get_or_compile(&path, inline.as_deref()) {
-                Ok(ast) => ast.clone(),
+                Ok(ast) => ast,
                 Err(err) => {
                     eprintln!("Failed to compile Rhai script '{path}': {err}");
                     continue;
@@ -395,5 +418,39 @@ mod tests {
             GameplayEvent::Trigger { tag, .. } => assert_eq!(tag, "quest:altar_discovered"),
             _ => panic!("Expected Trigger event"),
         }
+    }
+
+    #[test]
+    fn endless_loop_script_is_stopped_by_operation_limit() {
+        let mut host = ScriptHost::new();
+        let ast = host.get_or_compile("inline:spin", Some("while true {}")).unwrap();
+        let entity = World::new().spawn();
+        // Returns (instead of hanging) because the engine aborts after MAX_SCRIPT_OPERATIONS.
+        host.execute_entity_tick(entity, &ast, 0.016, Vec3::ZERO, Vec3::ZERO, Vec3::ZERO, &[]);
+    }
+
+    #[test]
+    fn broken_reload_reports_once_and_keeps_last_good_script() {
+        let path = std::env::temp_dir().join(format!("saan_reload_{}.rhai", std::process::id()));
+        let key = path.to_str().unwrap();
+        let t0 = SystemTime::now() - std::time::Duration::from_secs(60);
+
+        fs::write(&path, "fn on_tick(ctx) { ctx.set_vel(1.0, 0.0, 0.0); return ctx; }").unwrap();
+        fs::File::options().write(true).open(&path).unwrap().set_modified(t0).unwrap();
+        let mut host = ScriptHost::new();
+        let good = host.get_or_compile(key, None).unwrap();
+
+        fs::write(&path, "fn on_tick(ctx) { this is not rhai").unwrap();
+        fs::File::options()
+            .write(true)
+            .open(&path)
+            .unwrap()
+            .set_modified(t0 + std::time::Duration::from_secs(10))
+            .unwrap();
+        assert!(host.get_or_compile(key, None).is_err());
+        let after = host.get_or_compile(key, None).unwrap();
+        assert!(Arc::ptr_eq(&good, &after));
+
+        let _ = fs::remove_file(&path);
     }
 }
